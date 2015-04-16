@@ -1,0 +1,68 @@
+--gagent
+
+    void GAgent_init();
+    GAgent_Tick();
+    GAgent_Exit();
+    uint32_t GAgent_Cloud_Send( uint8_t *buf,uint32_t buflen );
+    uint32_t GAgent_Cloud_GetPacket(uint8_t *buffer, uint32_t* len);
+    uint32_t GAgent_Lan_Send( uint8_t *buf,uint32_t buflen );
+    uint32_t GAgent_Lan_GetPacket(uint8_t *buf, uint32_t* buflen)
+    uint32_t GAgent_Local_Send( uint8_t *buffer, uint32_t* buflen );
+    uint32_t GAgent_Local_GetPacket( uint8_t *buffer, uint32_t* buflen );
+    void GAgent_WiFiEvenHandle(int16_t wifistatus,int32_t cloudstatus);
+    void GAgent_CheckNewClient();
+    uint16_t GAgent_GetWiFiStatus( void );
+    void GAgent_SetWiFiStatus( uint16_t wifistatus,uint8_t flag );
+    uint16_t GAgent_GetCloudConfigStatus( void );
+    void GAgent_SetCloudConfigStatus( uint16_t cloudstauts );
+    uint16_t GAgent_GetCloudServerStatus(void);
+    void GAgent_SetCloudServerStatus( uint16_t serverstatus );
+    void GAgent_AddNewClientFd( int32_t fd  );
+    void GAgent_ClrNewClientFD( int32_t fd );
+
+--cloud
+    uint32_t Cloud_ReqRegister();
+    uint32_t Cloud_ResRegister();
+    uint32_t Cloud_ReqDisable();
+    uint32_t Cloud_ResDisable();
+    uint32_t Cloud_ReqGetFid();
+    uint32_t Cloud_ResGetFid( uint8_t *download_url, char *fwver, char *buf );
+    uint32_t Cloud_OTAByUrl();
+    uint32_t Cloud_ReqProvision();
+    uint32_t Cloud_ResProvision();
+    uint32_t Cloud_ReqConnect( );
+    uint32_t Cloud_ResConnect( );
+    uint32_t Cloud_SubTopic( uint16_t mqttstatus );
+    uint32_t Cloud_SubTopicRes();
+    uint32_t Cloud_Disconnect();
+    uint32_t Cloud_JD_ReqGet_uuid();
+    uint32_t Cloud_JD_ResGet_uuid();
+    uint32_t Cloud_JD_Post_ReqFeed_Key();
+    uint32_t Cloud_JD_Post_ResFeed_Key();
+
+    --MQTT
+         MQTT_HeartbeatTime();
+         MQTT_ReqOnlineClient();
+         MQTT_DoCloudMCUCmd();
+         MQTT_SubLoginTopic();
+         MQTT_SendConnetPacket();
+
+      --MQTTLIB
+         ....
+         
+    --HTTP
+         Http_Disable_DID();
+         Http_Response_DID();
+         Http_Sent_Provision();
+         Http_GetTarget();
+         HTTP_DoGetTargetId();
+         Http_JD_Get_uuid_req();
+         Http_JD_Get_uuid_res();
+         Http_JD_Post_Feed_Key_req();
+--lan
+    void Lan_Send( uint8_t *buf,uint32_t buflen );
+    uint32_t GAgent_LanTCPDataHandle(char *buf,int *buflen);
+    void Lan_TCPWebConfig();
+    int32_t GAgent_LanUDPDataHandle();
+--local
+  ...
