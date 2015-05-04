@@ -47,10 +47,8 @@ int handleWebConfig(int fd)
 
         send(fd, buf_head, strlen(buf_head), 0);
         send(fd, buf_body, strlen(buf_body), 0);
-#if (GAGENT_WITH_HF == 1)
-#else
+        
         fflush(fd);
-#endif
     }
     else{
         //GET /web_config.cgi?fname=chensf&lname=pinelinda HTTP/1.1
@@ -65,12 +63,12 @@ int handleWebConfig(int fd)
             p = strchr(index_pass, ' ');
             if(p) *p = '\0';
 
-            if((strlen(index_ssid) > 32) || (strlen(index_pass) > 32))
+            if((strlen(index_ssid) > SSID_LEN_MAX) || (strlen(index_pass) > WIFIKEY_LEN_MAX))
             {
-
+                /* switch to err handle */
             }
-            memset(g_stGAgentConfigData.wifi_ssid, 0, 32);
-            memset(g_stGAgentConfigData.wifi_key, 0, 32);
+            memset(g_stGAgentConfigData.wifi_ssid, 0, SSID_LEN_MAX + 1);
+            memset(g_stGAgentConfigData.wifi_key, 0, WIFIKEY_LEN_MAX + 1);
 
             memcpy(g_stGAgentConfigData.wifi_ssid, index_ssid, strlen(index_ssid));
             memcpy(g_stGAgentConfigData.wifi_key, index_pass, strlen(index_pass));
@@ -94,10 +92,9 @@ int handleWebConfig(int fd)
 
             send(fd, buf_head, strlen(buf_head), 0);
             send(fd, buf_body, strlen(buf_body), 0);
-#if (GAGENT_WITH_HF == 1)
-#else
+            
             fflush(fd);
-#endif
+            
             DRV_WiFi_StationCustomModeStart(g_stGAgentConfigData.wifi_ssid, g_stGAgentConfigData.wifi_key);
             msleep(100);
             DRV_GAgent_Reset();

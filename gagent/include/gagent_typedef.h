@@ -1,4 +1,4 @@
-#ifndef _GAGENT_TYPEDEF_H_H_
+﻿#ifndef _GAGENT_TYPEDEF_H_H_
 #define _GAGENT_TYPEDEF_H_H_ 
 #include "platform.h"
 
@@ -33,14 +33,29 @@ typedef void (*task)(void *arg);
 #define CLEAR_BIT(val, bit) ((val) &= ~(1 << bit))
 
 #define DID_LEN      24
-#define PASSCODE_LEN 11
-#define PASSCODE_MAXLEN 16
-#define PK_LEN       33
-#define IP_LEN       17
-#define SSID_LEN     32
-#define WIFIKEY_LEN  32
-#define URL_LEN      512
-#define CLOUD3NAME  10
+#define PASSCODE_LEN 10
+#define PASSCODE_MAXLEN 32
+#define PK_LEN       32
+#define IP_LEN_MAX   15         /* eg:192.168.180.180 15byte.Should be ended with '\0' */
+#define IP_LEN_MIN   7          /* eg:1.1.1.1 7bytes. Should be ended with '\0' */
+#define SSID_LEN_MAX     32
+#define WIFIKEY_LEN_MAX  32
+#define CLOUD3NAME   10
+#define FIRMWARELEN  32
+#define MAC_LEN      32
+#define APNAME_LEN   32
+#define M2MSERVER_LEN 128
+#define PHONECLIENTID 23
+#define PRODUCTUUID_LEN   32
+#define FEEDID_LEN 64
+#define ACCESSKEY_LEN  64
+#define MCU_P0_LEN 2
+#define MCU_CMD_LEN 2
+#define MCU_PROTOCOLVER_LEN 8
+#define MCU_P0VER_LEN 8
+#define MCU_HARDVER_LEN 8
+#define MCU_SOFTVER_LEN 8
+#define MCU_MCUATTR_LEN 8
 
 /* use for mqtt var len */
 typedef struct _varc
@@ -52,9 +67,9 @@ typedef struct _varc
 /*  */
 typedef struct _jd_info
 {
-    int8 product_uuid[32];
-    int8 feed_id[64];
-    int8 access_key[64];
+    int8 product_uuid[PRODUCTUUID_LEN+1];
+    int8 feed_id[FEEDID_LEN+1];
+    int8 access_key[ACCESSKEY_LEN+1];
     int8 ischanged;
     int8 tobeuploaded;
 }jd_info;
@@ -94,18 +109,18 @@ typedef struct GAGENT_CONFIG
 {
     uint32 magicNumber;
     uint32 flag;
-    int8 wifipasscode[PASSCODE_MAXLEN]; /* gagent passcode */
-    int8 wifi_ssid[SSID_LEN]; /* WiFi AP SSID */
-    int8 wifi_key[WIFIKEY_LEN]; /* AP key */
+    int8 wifipasscode[PASSCODE_MAXLEN+1]; /* gagent passcode +1 for printf*/
+    int8 wifi_ssid[SSID_LEN_MAX+1]; /* WiFi AP SSID */
+    int8 wifi_key[WIFIKEY_LEN_MAX+1]; /* AP key */
     int8 DID[DID_LEN]; /* Device, generate by server, unique for devices */
     int8 FirmwareVerLen[2];
-    int8 FirmwareVer[32];
+    int8 FirmwareVer[FIRMWARELEN+1];
     
     int8 old_did[DID_LEN];
-    int8 old_wifipasscode[PASSCODE_LEN];
-    int8 old_productkey[PK_LEN];
-    int8 m2m_ip[IP_LEN];
-    int8 GServer_ip[IP_LEN];
+    int8 old_wifipasscode[PASSCODE_MAXLEN + 1];
+    int8 old_productkey[PK_LEN + 1];    /* Add 1byte '\0' */
+    int8 m2m_ip[IP_LEN_MAX + 1];        /* Add 1byte '\0' */
+    int8 GServer_ip[IP_LEN_MAX + 1];    /* Add 1byte '\0' */
     int8 airkiss_value; //airkiss BC value to app.
     int8 rsvd[256];
     /** 3rd cloud **/
@@ -121,24 +136,29 @@ typedef struct _XPG_MCU
     uint32 oneShotTimeout;
 
     uint16  passcodeEnableTime;
+	uint16  passcodeTimeout;
     uint8 timeoutCnt;
     //int8 loseTime;
     /* 8+1('\0') for print32f. */
-    uint8   protocol_ver[8+1];
-    uint8   p0_ver[8+1];
-    uint8   hard_ver[8+1];
-    uint8   soft_ver[8+1];
-    uint8   product_key[32+1];
+    uint8   protocol_ver[MCU_PROTOCOLVER_LEN+1];
+    uint8   p0_ver[MCU_P0VER_LEN+1];
+    uint8   hard_ver[MCU_HARDVER_LEN+1];
+    uint8   soft_ver[MCU_SOFTVER_LEN+1];
+    uint8   product_key[PK_LEN+1];
+    uint8   mcu_attr[MCU_MCUATTR_LEN];
 }XPG_MCU;
 
 typedef struct _wifiStatus
 {
-   int8 wifiStrength;
+   int8 wifiStrength; //WiFi信号强度.
 }wifistatus;
 typedef struct _waninfo
 {
     uint32 send2HttpLastTime;
     uint32 send2MqttLastTime;
+    uint32 ReConnectMqttTime;
+    uint32 ReConnectHttpTime;
+    uint32 firstConnectHttpTime;
     uint32 RefreshIPLastTime;
     uint32 RefreshIPTime;
     int32 http_socketid;
@@ -151,21 +171,29 @@ typedef struct _waninfo
 
     int8 Cloud3Flag;/* need to connect 3rd cloud flag */
     int8 AirLinkFlag;    
-    int8 firmwarever[32];  /* only for store OTA firmware version, not current */
-    int8 phoneClientId[32];
+    int8 phoneClientId[PHONECLIENTID+1];
     int8 cloudPingTime;
-    
+    int8 httpCloudPingTime;
 }WanInfo;
 typedef struct _runtimeinfo3rd
 {
     /* 3rd info*/
     uint32 JD_Post_lastTime;
 }RunTimeInfo3rd;
+typedef struct _localmodule
+{
+    uint8 timeoutCnt;
+    uint32 oneShotTimeout;
+    int32 uart_fd;
+
+}localmodule;
 typedef struct runtimeinfo_t
 {
     //uint32 connect2CloudLastTime;
     uint32 wifistatustime;
-    int32 uart_fd;
+    //uint32 send2LocalLastTime
+    //int32 uart_fd;
+    uint32 updatestatusinterval;
     uint16 GAgentStatus;/* gagentStatus */
     uint16 lastGAgentStatus;
    
@@ -175,18 +203,20 @@ typedef struct runtimeinfo_t
     wifistatus devWifiStatus;
     
     WanInfo waninfo;
+    localmodule local;
     fd_set readfd;
     ppacket Txbuf;/* send data to local buf */
     ppacket Rxbuf;/* receive data from local buf */
     RunTimeInfo3rd cloud3rd;
+	int8 firstStartUp;
 }runtimeinfo, *pruntimeinfo;
 
 typedef struct modeinfo_t
 {
     int32 m2m_Port;
-    int8 m2m_SERVER[128];
-    uint8 szmac[16];
-    int8 ap_name[32];
+    int8 m2m_SERVER[M2MSERVER_LEN+1];
+    uint8 szmac[MAC_LEN+1];
+    int8 ap_name[APNAME_LEN+1];
 }modeinfo, *pmodeinfo;
 
 
@@ -202,14 +232,18 @@ typedef struct lanserver_t
     int32 udpBroadCastServerFd;
     int32 udpServerFd;
     int32 tcpServerFd;
+    int32 tcpWebConfigFd;
     int32 tcpClientNums;
-    uint32 udpSendBroadCastTime;
+    uint32 onboardingBroadCastTime;//config success broadcast Counter
+	uint32 startupBroadCastTime;//first on ele broadcast Counter
+    int32 broResourceNum;//public resource counter for broadcast
+	
     struct{
         int32 fd;
         int32 timeout;
         int32 isLogin;
     }tcpClient[8];
-    
+    struct sockaddr_t addr;
 }lanserver, *planserver;
 
 /* global context, or gagent context */

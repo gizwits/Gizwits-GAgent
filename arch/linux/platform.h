@@ -18,11 +18,12 @@
 #include <net/if.h>
 #include <sys/ioctl.h>
 #include <termios.h>
-#include<signal.h>
+#include <signal.h>
 
 #define _POSIX_C_SOURCE 200809L
 #include "hal_uart.h"
-#define WIFI_SOFTVAR    "04010001"
+
+#define WIFI_SOFTVAR    "04010002"
 #define WIFI_HARDVER    "00-LINUX"
 
 #define UART_NAME       "/dev/ttyUSB0"

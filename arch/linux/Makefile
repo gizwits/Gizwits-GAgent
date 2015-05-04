@@ -1,4 +1,4 @@
-CC=gcc -fPIC
+CC=gcc -fPIC 
 FLAGS=-m32
 CLOUD=../../gagent/cloud/src
 CLOUD_INC=../../gagent/cloud/inc
@@ -7,10 +7,13 @@ LOCAL=../../gagent/local/src
 LOCAL_INC=../../gagent/local/inc
 LAN=../../gagent/lan/src
 LAN_INC=../../gagent/lan/inc
+HAL=hal_serial
+NET=net
 OBJ=obj
 DLL=dll
+
 MAIN=../../gagent/main.c
-INC=-I../../iof -I../../arch/linux -I../../gagent/include -IHAL/ -I$(LAN_INC) -I$(CLOUD_INC) -I$(LOCAL_INC)
+INC=-I../../iof -I../../arch/linux -I../../gagent/include -I$(HAL)/ -I$(LAN_INC) -I$(CLOUD_INC) -I$(LOCAL_INC) -I$(NET)
 TARGE=target
       
 # $@ 目标文件
@@ -21,31 +24,11 @@ TARGE=target
 # -l 指明所需要的库，后面跟库的名字，库的后缀不用写.
 
 $(TARGE)/GAgent_linux:\
-	$(DLL)/libGAgent.so
-
-	$(CC) $(MAIN) $(INC) $(FLAGS) -L$(DLL) -lGAgent -lrt -lm -o $@
-	@echo "build GAgent_linux ok."
-	@echo "------------------------ Gizwits GAgent -----------------------"
-	@echo "| 1.make help for help." 
-	@echo "| 2.run \"make folders\" to make folders first."
-	@echo "| 3.run \"make\" to build target." 
-	@echo "| 4.you must config the libGAgent.so in your PATH !!!!!!!!"
-	@echo "| 5.use \"root\" or add \"sudo\" to run target !!!!!!!!"
-	@echo "---------------------------------------------------------------"
-	@echo "|                      	By Alex.lin from Gizwits GAgent Team"
-	@echo "---------------------------------------------------------------"
-folders:
-	mkdir -p ./obj
-	mkdir -p ./dll
-	mkdir -p $(TARGE)
-    
-	@echo "mkdir folders ok."
-$(DLL)/libGAgent.so:\
- 	$(OBJ)/user_misc.o\
+	$(OBJ)/user_misc.o\
 	$(OBJ)/utilcoding.o\
 	$(OBJ)/http.o\
 	$(OBJ)/mqttlib.o\
-	$(OBJ)/MqttSTM.o\
+	$(OBJ)/mqttbase.o\
 	$(OBJ)/mqttxpg.o\
 	$(OBJ)/cloud.o\
 	$(OBJ)/mcu_common.o\
@@ -53,12 +36,60 @@ $(DLL)/libGAgent.so:\
 	$(OBJ)/local.o\
 	$(OBJ)/hal_receive.o\
 	$(OBJ)/adapter_linux.o\
-	$(OBJ)/gagent_netconfig.o\
+	$(OBJ)/netevent.o\
+	$(OBJ)/gagent_netevent.o\
 	$(OBJ)/lanudp.o \
 	$(OBJ)/lantcp.o \
 	$(OBJ)/gagent.o \
-	$(OBJ)/lan.o
+	$(OBJ)/lan.o\
+	$(OBJ)/webconfig.o
+	
+
+	$(CC) $(MAIN) $(INC) $(FLAGS) -L$(DLL) -lrt -lm -o $@ $^
+	@echo "build GAgent_linux ok."
+	@echo "\r\n"
+	@echo "------------------------ Gizwits GAgent -----------------------"
+	@echo "| 1.type "make help" for help infonation." 
+	@echo "| 2.run \"make folders\" to make folders in first time."
+	@echo "| 3.run \"make\" to build target." 
+	@echo "| 4.run libGAgent.so to make lib file."
+	@echo "| 5.use \"root\" or add \"sudo\" to run target !!!!!!!!"
+	@echo "| * for more detail refer to the readme."
+	@echo "---------------------------------------------------------------"
+	@echo "|                      	By Alex.lin from Gizwits GAgent Team"
+	@echo "---------------------------------------------------------------"
+	@echo "\r\n"
+
+folders:
+	mkdir -p ./obj
+	mkdir -p ./dll
+	mkdir -p ./config
+	mkdir -p $(TARGE)
+    
+	@echo "mkdir folders ok."
+libGAgent.so:\
+	$(OBJ)/user_misc.o\
+	$(OBJ)/utilcoding.o\
+	$(OBJ)/http.o\
+	$(OBJ)/mqttlib.o\
+	$(OBJ)/mqttbase.o\
+	$(OBJ)/mqttxpg.o\
+	$(OBJ)/cloud.o\
+	$(OBJ)/mcu_common.o\
+	$(OBJ)/hal_uart.o\
+	$(OBJ)/local.o\
+	$(OBJ)/hal_receive.o\
+	$(OBJ)/adapter_linux.o\
+	$(OBJ)/netevent.o\
+	$(OBJ)/gagent_netevent.o\
+	$(OBJ)/lanudp.o \
+	$(OBJ)/lantcp.o \
+	$(OBJ)/gagent.o \
+	$(OBJ)/lan.o\
+	$(OBJ)/webconfig.o
+
 	$(CC) $(INC) $(FLAGS) -shared -fPIC  -lrt -lm -o $@ $^
+	mv $@ $(DLL)
 	@echo "GAgent.so Build ok."
 
 $(OBJ)/http.o:\
@@ -70,20 +101,25 @@ $(OBJ)/cloud.o:\
 	$(CC) -c $(INC) -o $@ $^
 	@echo "build cloud.o ok."	
 $(OBJ)/mqttxpg.o:\
-	$(OBJ)/MqttSTM.o\
+	$(OBJ)/mqttbase.o\
 	$(CLOUD)/mqttxpg.c
 	$(CC) -c $(INC) -o $@ $^
 	@echo "build mqttxpg.o ok."
 
-$(OBJ)/MqttSTM.o:\
+$(OBJ)/mqttbase.o:\
 	$(OBJ)/mqttlib.o\
-	$(CLOUD)/MqttSTM.c
+	$(CLOUD)/mqttbase.c
 	$(CC) -c $(INC) -o $@ $^
-	@echo "build MqttSTM.o ok."
-$(OBJ)/gagent_netconfig.o:\
-	../../gagent/gagent_netconfig.c	
+	@echo "build mqttbase.o ok."
+$(OBJ)/netevent.o:\
+	$(NET)/netevent.c
 	$(CC) -c $(INC) -o $@ $^
-	@echo "build gagent_netconfig.o ok."
+	@echo "build netevent.o ok."
+
+$(OBJ)/gagent_netevent.o:\
+	../../gagent/gagent_netevent.c	
+	$(CC) -c $(INC) -o $@ $^
+	@echo "build gagent_netevent.o ok."
 $(OBJ)/mqttlib.o:\
 	$(CLOUD)/mqttlib.c
 	$(CC) -c $(INC) -o $@ $^
@@ -97,7 +133,7 @@ $(OBJ)/gagent.o:\
 	$(CC) -c $(INC) -o $@ $^
 	@echo "build gagent.o ok."
 $(OBJ)/hal_uart.o:\
-	HAL/hal_uart.c
+	$(HAL)/hal_uart.c
 	$(CC) -c $(INC) -o $@ $^
 	@echo $@ "ok."
 
@@ -137,6 +173,11 @@ $(OBJ)/lantcp.o:\
 	$(CC) -c $(INC) -o $@ $^
 	@echo "build lantcp.o ok."
 	
+$(OBJ)/webconfig.o:\
+	$(LAN)/webconfig.c	
+	$(CC) -c $(INC) -o $@ $^
+	@echo "build webconfig.o ok."
+
 .PHONY:clean help 
 clean:
 	rm -rf $(OBJ)/*
@@ -144,12 +185,15 @@ clean:
 	rm -rf $(TARGE)/*
 	@echo "clean all"
 help:
+	@echo "\r\n"
 	@echo "------------------------ Gizwits GAgent -----------------------"
-	@echo "| 1.make help for help." 
-	@echo "| 2.run \"make folders\" to make folders first."
+	@echo "| 1.type "make help" for help infonation." 
+	@echo "| 2.run \"make folders\" to make folders in first time."
 	@echo "| 3.run \"make\" to build target." 
-	@echo "| 4.you must config the libGAgent.so in your PATH !!!!!!!!"
+	@echo "| 4.run libGAgent.so to make lib file."
 	@echo "| 5.use \"root\" or add \"sudo\" to run target !!!!!!!!"
+	@echo "| * for more detail refer to the readme."
 	@echo "---------------------------------------------------------------"
 	@echo "|                      	By Alex.lin from Gizwits GAgent Team"
 	@echo "---------------------------------------------------------------"
+	@echo "\r\n"

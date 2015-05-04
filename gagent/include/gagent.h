@@ -1,10 +1,12 @@
-#ifndef _GAGENT_H_
+﻿#ifndef _GAGENT_H_
 #define _GAGENT_H_ 
 #include "gagent_typedef.h"
 #include "iof_arch.h"
 #include "utils.h"
 
 #define GAGENT_RELEASE 1
+
+#define GAGENT_MAGIC_NUM    0x55aa1122
 
 extern pgcontext pgContextData;
 
@@ -22,11 +24,11 @@ extern pgcontext pgContextData;
 #define ADDRESS_POOL_START  "10.10.100.240"
 #define ADDRESS_POOL_END    "10.10.100.255"
 
-#define RET_SUCCESS 0
-#define RET_FAILED  -1
+#define RET_SUCCESS (0)
+#define RET_FAILED  (-1)
 #define GAGENT_BUF_LEN  1024
 #define SOCKET_RECBUFFER_LEN (1*1024)
-#define SOCKET_TCPSOCKET_BUFFERSIZE    1*1024
+#define SOCKET_TCPSOCKET_BUFFERSIZE    (1*1024)
 
 
 /* Macro of module LAN */
@@ -35,16 +37,21 @@ extern pgcontext pgContextData;
 #define LAN_UDP_BROADCAST_SERVER_PORT   2415
 
 #define LAN_TCPCLIENT_MAX           8       /* max 8 tcp socket */
-#define LAN_CLIENT_MAXLIVETIME      12      /* 12S,timeout */
+#define LAN_CLIENT_MAXLIVETIME      14      /* 14S,timeout */
+#define FIRMWARE_LEN_MAX            32
+
+//add by Frank liu 20150414
+#define INVALID_SOCKET	(-1)
+#define SOCKET_ERROR	(-1)
+#define SEND_UDP_DATA_TIMES 30
 
 //GAgentStatus
 #define WIFI_MODE_AP                  (1<<0)
 #define WIFI_MODE_STATION             (1<<1)
 #define WIFI_MODE_ONBOARDING          (1<<2)
 #define WIFI_MODE_BINDING             (1<<3)
-#define WIFI_STATION_STATUS           (1<<4)
-#define WIFI_CLOUD_STATUS             (1<<5)
-#define WIFI_MQTT_STATUS              (3<<6)
+#define WIFI_STATION_CONNECTED        (1<<4)
+#define WIFI_CLOUD_CONNECTED          (1<<5)
 #define WIFI_LEVEL                    (7<<8)
 #define WIFI_CLIENT_ON                (1<<11)
 #define WIFI_MODE_TEST                (1<<12)
@@ -77,18 +84,21 @@ extern pgcontext pgContextData;
 #define CLOUD_DATA_OUT    (1<<7)
 
 /********time define***********/
-#define ONE_SECOND  (1000)
+#define ONE_SECOND  (1)
 #define ONE_MINUTE  (60 * ONE_SECOND)
 #define ONE_HOUR    (60 * ONE_MINUTE)
-#define GAGENT_HTTP_TIMEOUT        5*ONE_SECOND
-#define GAGENT_MQTT_TIMEOUT        5*ONE_SECOND
+#define GAGENT_CLOUDREADD_TIME     10
+#define GAGENT_HTTP_TIMEOUT        5//*ONE_SECOND
+#define GAGENT_MQTT_TIMEOUT        5//*ONE_SECOND
 
 /*Gizwits heartbeat with eath others, Cloud, SDK/Demo, GAgent and MCU*/
 #define MCU_HEARTBEAT           55
-#define LAN_HEARTBEAT           1
-#define CLOUD_HEARTBEAT          50*ONE_SECOND
+
+#define LOCAL_GAGENTSTATUS_INTERVAL   (10*ONE_MINUTE)
+
+#define CLOUD_HEARTBEAT          50//*ONE_SECOND
 #define CLOUD_MQTT_SET_ALIVE          120
-#define HTTP_TIMEOUT            60*ONE_SECOND
+//#define HTTP_TIMEOUT            60//*ONE_SECOND
 /*broadcasttime(S)*/
 #define BROADCAST_TIME          30*ONE_SECOND
 /* JD config timeout xs */
@@ -96,8 +106,6 @@ extern pgcontext pgContextData;
 
 /*For V4, GAgent waiting for MCU response of very CMD send by GAgent, Unit: ms*/
 #define MCU_ACK_TIME_MS    200
-//发送airlink配置成功包给mcu的次数
-#define AIRLINK2MCURESULT_NUM   1
 
 #define GAGENT_CRITICAL    0x00
 #define GAGENT_ERROR       0X01
@@ -105,8 +113,6 @@ extern pgcontext pgContextData;
 #define GAGENT_INFO        0X03
 #define GAGENT_DEBUG       0x04
 #define GAGENT_DUMP        0x05
-
-#define GAGENT_DEBUG_PACKET_SEND2MCU    0X01
 
 /* GAgent_CONFIG_S flag */
 #define XPG_CFG_FLAG_CONNECTED      (1<<0) /* 重要。wifi工作模式。1=STA，0=AP */
@@ -143,14 +149,18 @@ extern pgcontext pgContextData;
 #define WIFI_TEST           0x13
 #define WIFI_TEST_ACK       0x14
 
+#define MCU_ENABLE_BIND     0x15
+#define MCU_ENABLE_BIND_ACK 0x16
+
 #define MCU_LEN_POS            2
 #define MCU_CMD_POS            4
 #define MCU_SN_POS             5
-#define MCU_HDR_LEN_NO_PIECE   8
-#define MCU_LEN_NO_PIECE       9
+#define MCU_HDR_LEN            8
+#define MCU_LEN_NO_PAYLOAD     9
 #define MCU_HDR_FF             0xFF
-#define MCU_NO_PIECE_P0_POS     8
+#define MCU_P0_POS             8
 #define MCU_BYTES_NO_SUM        3
+#define LOCAL_GAGENTSTATUS_MASK 0x1FFF
 
 #define BUF_LEN 1024*4      /* depend on you platform ram size */
 #define BUF_HEADLEN 128
@@ -164,43 +174,53 @@ void GAgent_Init( pgcontext *pgc );
 void GAgent_VarInit( pgcontext *pgc );
 void GAgent_WiFiInit( pgcontext pgc );
 void GAgent_dumpInfo( pgcontext pgc );
-/*** GAgent Cloud API ***/
+/********************************************** GAgent Cloud API **********************************************/
 int32 GAgent_Cloud_GetPacket( pgcontext pgc,ppacket pbuf , int32 buflen);
 void GAgent_Cloud_Handle( pgcontext pgc, ppacket Rxbuf,int32 length );
 uint32 GAgent_Cloud_SendData( pgcontext pgc,ppacket pbuf, int32 buflen );
 uint32 GAgent_Cloud_OTAByUrl( int32 socketid,uint8 *downloadUrl );
-void GAgent_CloudTick( pgcontext pgc );
 uint32 GAgent_Cloud_Disconnect();
-/*** GAgent Lan API ***/
-
+/********************************************** GAgent Lan API **********************************************/
 uint32 GAgent_Lan_Handle(pgcontext pgc, ppacket prxBuf, ppacket ptxBuf, int32 len);
 uint32 GAgent_Lan_SendData();
+void GAgent_DoTcpWebConfig( pgcontext pgc );
 uint32 GAgent_Exit();
 
-/*** GAgent Local API ***/
+/********************************************** GAgent Local API **********************************************/
 /* GAgent receive data hook function */
 void GAgent_RegisterReceiveDataHook( pfMasterMCU_ReciveData fun );
 /* GAgent send data hook function */
 void GAgent_RegisterSendDataHook( pfMasertMCU_SendData fun );
 void GAgent_LocalInit( pgcontext pgc );
+void GAgent_LocalSendGAgentstatus(pgcontext pgc,uint32 dTime_s );
 int32 GAgent_Local_GetPacket( pgcontext pgc, ppacket Rxbuf );
-int32 GAgent_LocalDataWriteP0( pgcontext pgc,int32 fd,ppacket pTxBuf );
+int32 GAgent_LocalDataWriteP0( pgcontext pgc,int32 fd,ppacket pTxBuf,uint8 cmd );
 void GAgent_Local_Handle( pgcontext pgc,ppacket Rxbuf,int32 length );
 
 
-void GAgent_SetWiFiStatus( pgcontext pgc,int16 wifistatus,int8 flag );
+void GAgent_logevelSet( uint16 level );
+void GAgent_SetWiFiStatus( pgcontext pgc,uint16 wifistatus,int8 flag );
 void GAgent_SetCloudConfigStatus( pgcontext pgc,int16 cloudstauts );
 void GAgent_SetCloudServerStatus( pgcontext pgc,int16 serverstatus );
 int8 GAgent_SetGServerIP( pgcontext pgc,int8 *szIP );
 int8 GAgent_SetGServerSocket( pgcontext pgc,int32 socketid );
 uint8 GAgent_SetDeviceID( pgcontext pgc,int8 *deviceID );
 int8 GAgent_IsNeedDisableDID( pgcontext pgc );
+void GAgent_Reset( pgcontext pgc );
+void GAgent_Config( uint8 typed,pgcontext pgc );
 int8 GAgent_SetOldDeviceID( pgcontext pgc,int8* p_szDeviceID,int8* p_szPassCode,int8 flag );
 void GAgent_UpdateInfo( pgcontext pgc,int8 *new_pk );
 void  GAgent_AddSelectFD( pgcontext pgc );
 int32 GAgent_MaxFd( pgcontext pgc ) ;
-void GAgent_CloudTick( pgcontext pgc );
-void GAgent_Tick( pgcontext pgc );
 int8 GAgent_loglevelenable( uint16 level );
+
+uint32 GAgent_BaseTick();
+void GAgent_Tick( pgcontext pgc );
+void GAgent_CloudTick( pgcontext pgc,uint32 dTime_s);
+void GAgent_LocalTick( pgcontext pgc,uint32 dTime_s );
+void GAgent_LanTick( pgcontext pgc,uint32 dTime_s );
+void GAgent_RefreshIPTick( pgcontext pgc,uint32 dTime_s );
+void GAgent_WiFiEventTick( pgcontext pgc,uint32 dTime_s );
+
 
 #endif

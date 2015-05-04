@@ -1,20 +1,20 @@
 #include "gagent.h"
 #include "mqttlib.h"
-#include "MqttSTM.h"
+#include "mqttbase.h"
 #include "cloud.h"
 
-#define MQTT_DUP_FLAG     1<<3
-#define MQTT_QOS0_FLAG    0<<1
-#define MQTT_QOS1_FLAG    1<<1
-#define MQTT_QOS2_FLAG    2<<1
+#define MQTT_DUP_FLAG     (1<<3)
+#define MQTT_QOS0_FLAG    (0<<1)
+#define MQTT_QOS1_FLAG    (1<<1)
+#define MQTT_QOS2_FLAG    (2<<1)
 
 #define MQTT_RETAIN_FLAG  1
 
-#define MQTT_CLEAN_SESSION  1<<1
-#define MQTT_WILL_FLAG      1<<2
-#define MQTT_WILL_RETAIN    1<<5
-#define MQTT_USERNAME_FLAG  1<<7
-#define MQTT_PASSWORD_FLAG  1<<6
+#define MQTT_CLEAN_SESSION  (1<<1)
+#define MQTT_WILL_FLAG      (1<<2)
+#define MQTT_WILL_RETAIN    (1<<5)
+#define MQTT_USERNAME_FLAG  (1<<7)
+#define MQTT_PASSWORD_FLAG  (1<<6)
 
 uint8_t mqtt_num_rem_len_bytes(const uint8_t* buf) {
     uint8_t num_bytes = 1;

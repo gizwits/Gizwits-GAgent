@@ -6,7 +6,7 @@
 #endif
 #include "gagent.h"
 #include "mqttlib.h"
-#include "MqttSTM.h"
+#include "mqttbase.h"
 
 int32 MQTT_readPacket( int32 socketid,ppacket pbuf, int32 bufferLen);
 int MQTTclose_socket(mqtt_broker_handle_t* broker);
@@ -20,7 +20,6 @@ int32 Mqtt_DoLogin( mqtt_broker_handle_t *LOG_Sendbroker,u8* packet,int32 packet
 int32 Mqtt_DispatchPublishPacket( pgcontext pgc,u8 *packetBuffer,int32 packetLen );
 int32 Mqtt_IntoRunning( pgcontext pgc );
 int32 WAN_DoMCUCommand(u8 clientid[32], u8 *pP0Data, int32 pP0Datalen);
-void MQTT_handlePacket(void);
 
 void MQTT_HeartbeatTime(void);
 void Mqtt_ReqOnlineClient(void);

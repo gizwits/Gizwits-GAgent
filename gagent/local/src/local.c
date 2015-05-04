@@ -1,5 +1,6 @@
 #include "gagent.h"
 #include "utils.h"
+#include "lan.h"
 
 #define ACKBUF_LEN 1024
 ppacket pLocalAckbuf=NULL;
@@ -66,8 +67,8 @@ int32 Local_DataAdapter( uint8 *pData,int32 dataLen )
     int32 i=0,j=0,len = 0;
     uint8 *p_start=NULL,*p_end=NULL;
 
-    len = MCU_LEN_NO_PIECE;
-    len = dataLen;
+    len = MCU_LEN_NO_PAYLOAD;
+    len += dataLen;
 
     for( i=0;i<dataLen;i++ )
     {
@@ -120,9 +121,37 @@ uint32 Local_SendData( int32 fd,uint8 *pData, int32 bufferMaxLen )
     int32 i=0;
     if( PF_SendData2MCU!=NULL )
     {
+        GAgent_Printf( GAGENT_DUMP,"local send len = %d:\r\n",bufferMaxLen );
+        for( i=0;i<bufferMaxLen;i++ )
+            GAgent_Printf( GAGENT_DUMP," %02x",pData[i]);
+        GAgent_Printf( GAGENT_DUMP,"\r\n");
         PF_SendData2MCU( fd,pData,bufferMaxLen );
     }
     return 0;
+}
+/****************************************************************
+FunctionName    :   Local_Ack2MCU.
+Description     :   ack to mcu after receive mcu data.
+fd              :   local data fd.
+sn              :   receive local data sn .
+cmd             :   ack to mcu cmd.
+****************************************************************/
+void Local_Ack2MCU( int32 fd,uint8 sn,uint8 cmd )
+{
+    int32 len = MCU_LEN_NO_PAYLOAD; 
+    uint16 p0_len = htons(5);    
+    uint8 buf[MCU_LEN_NO_PAYLOAD];
+    
+    memset(buf, 0, len);
+    buf[0] = MCU_HDR_FF;
+    buf[1] = MCU_HDR_FF;
+    memcpy(&buf[MCU_LEN_POS], &p0_len, 2);
+    buf[MCU_CMD_POS] = cmd;
+    buf[MCU_SN_POS] = sn;
+    buf[MCU_LEN_NO_PAYLOAD-1]=GAgent_SetCheckSum( buf, (MCU_LEN_NO_PAYLOAD-1));
+    Local_SendData( fd,buf,len );
+
+    return ;
 }
 /****************************************************************
 FunctionName    :   GAgent_LocalReceData
@@ -134,34 +163,45 @@ Add by Alex.lin     --2015-04-07
 int32 GAgent_Local_GetPacket( pgcontext pgc, ppacket Rxbuf )
 {
     int32 dataLen=0;
-    if(FD_ISSET( pgc->rtinfo.uart_fd,&(pgc->rtinfo.readfd)) )
+    if(FD_ISSET( pgc->rtinfo.local.uart_fd,&(pgc->rtinfo.readfd)) )
     {
          resetPacket( Rxbuf ); 
-         dataLen = hal_ReceivepOnePack( pgc->rtinfo.uart_fd,Rxbuf->phead );
+         dataLen = hal_ReceivepOnePack( pgc->rtinfo.local.uart_fd,Rxbuf->phead );
+         pgc->rtinfo.local.timeoutCnt=0;
     }
     return dataLen;  
 }
-int32 GAgent_LocalDataWriteP0( pgcontext pgc,int32 fd,ppacket pTxBuf )
+
+/****************************************************************
+FunctionName    :   GAgent_LocalDataWriteP0
+Description     :   send p0 to local io and add 0x55 after 0xff
+                    auto.
+cmd             :   MCU_CTRL_CMD or WIFI_STATUS2MCU
+return          :   0-ok other -error
+Add by Alex.lin     --2015-04-07
+****************************************************************/
+int32 GAgent_LocalDataWriteP0( pgcontext pgc,int32 fd,ppacket pTxBuf,uint8 cmd )
 {
     int8 ret =0;
-    uint16 datalen = 0;
+    uint16 datalen = 0,i=0;
     uint16 flag = 0;
     uint16 sendLen = 0;
+    uint8 checksum = 0;
     /* head(0xffff)| len(2B) | cmd(1B) | sn(1B) | flag(2B) |  payload(xB) | checksum(1B) */
     pTxBuf->phead = pTxBuf->ppayload - 8;
     pTxBuf->phead[0] = MCU_HDR_FF;
     pTxBuf->phead[1] = MCU_HDR_FF;
     datalen = pTxBuf->pend - pTxBuf->ppayload + 5;    //p0 + cmd + sn + flag + checksum
     *(uint16 *)(pTxBuf->phead + 2) = htons(datalen);
-    pTxBuf->phead[4] = MCU_CTRL_CMD;
+    pTxBuf->phead[4] = cmd;
     pTxBuf->phead[5] = GAgent_NewSN();
     *(uint16 *)(pTxBuf->phead + 6) = htons(flag);
-    *(pTxBuf->pend) = GAgent_SetCheckSum(pTxBuf->phead, pTxBuf->pend - pTxBuf->phead);
+    *( pTxBuf->pend )  = GAgent_SetCheckSum(pTxBuf->phead, (pTxBuf->pend)-(pTxBuf->phead) );
     pTxBuf->pend += 1;  /* add 1 Byte of checksum */
 
     sendLen = (pTxBuf->pend) - (pTxBuf->phead);
-
-    //sendLen = Local_DataAdapter( pTxBuf->ppayload,( (pTxBuf->pend)-1 ) - (pTxBuf->ppayload) );
+    
+    sendLen = Local_DataAdapter( (pTxBuf->phead)+2,( (pTxBuf->pend) ) - (pTxBuf->ppayload) );
     Local_SendData( fd, pTxBuf->phead,sendLen );
 
     if(GAgent_CheckAck( fd,pgc,pTxBuf->phead,sendLen,pLocalAckbuf,GAgent_GetDevTime_MS())==0)
@@ -179,52 +219,71 @@ int32 GAgent_LocalDataWriteP0( pgcontext pgc,int32 fd,ppacket pTxBuf )
     return ret;
 }
 /****************************************************************
-FunctionName  :  GAgent_LocalGetInfo
-Description   :   get localinfo like pk..
-
+FunctionName  :     GAgent_LocalGetInfo
+Description   :     get localinfo like pk.
+return        :     return 
+Add by Alex.lin         --2015-04-18
 ****************************************************************/
 void Local_GetInfo( pgcontext pgc )
 {
     int8 i=0;
     int32 pos=0;
+    int8 length =0;
     uint16 *pTime=NULL;
+    uint16 *pplength=NULL;
     uint8 get_Mcu_InfoBuf[9]=
     {
         0xff,0xff,0x00,0x05,0x01,0x01,0x00,0x00,0x07
     }; 
+    //memset(&mcuAttrData[0],0,sizeof(mcuAttrData) );
     GAgent_DevLED_Green(0);
     get_Mcu_InfoBuf[8]  = GAgent_SetCheckSum( get_Mcu_InfoBuf, 8);
-    Local_SendData( pgc->rtinfo.uart_fd,get_Mcu_InfoBuf, 9 );
+    Local_SendData( pgc->rtinfo.local.uart_fd,get_Mcu_InfoBuf, 9 );
 
     for( i=0;i<20;i++ )
     {
-        if(GAgent_CheckAck( pgc->rtinfo.uart_fd,pgc,get_Mcu_InfoBuf,9,pgc->rtinfo.Rxbuf,GAgent_GetDevTime_MS())==0)
+        if(GAgent_CheckAck( pgc->rtinfo.local.uart_fd,pgc,get_Mcu_InfoBuf,9,pgc->rtinfo.Rxbuf,GAgent_GetDevTime_MS())==0)
         {
             int8 * Rxbuf=NULL;
             Rxbuf = pgc->rtinfo.Rxbuf->phead;
-            pos+=8;
-            memcpy( pgc->mcu.protocol_ver,Rxbuf+pos,8);
-            pgc->mcu.protocol_ver[8] = '\0';
-            pos+=8;
 
-            memcpy( pgc->mcu.p0_ver,Rxbuf+pos,8);
-            pgc->mcu.p0_ver[8] = '\0';
+            pplength = (u16*)&((pgc->rtinfo.Rxbuf->phead +2)[0]);
+            length = ntohs(*pplength);
+            
             pos+=8;
+            memcpy( pgc->mcu.protocol_ver, Rxbuf+pos, MCU_PROTOCOLVER_LEN );
+            pgc->mcu.protocol_ver[MCU_PROTOCOLVER_LEN] = '\0';
+            pos += MCU_PROTOCOLVER_LEN;
 
-            memcpy( pgc->mcu.hard_ver,Rxbuf+pos,8);
-            pgc->mcu.hard_ver[8] = '\0';
-            pos+=8;
+            memcpy( pgc->mcu.p0_ver,Rxbuf+pos, MCU_P0VER_LEN);
+            pgc->mcu.p0_ver[MCU_P0VER_LEN] = '\0';
+            pos+=MCU_P0VER_LEN;
 
-            memcpy( pgc->mcu.soft_ver,Rxbuf+pos,8);
-            pgc->mcu.soft_ver[8] = '\0';
-            pos+=8;
+            memcpy( pgc->mcu.hard_ver,Rxbuf+pos,MCU_HARDVER_LEN);
+            pgc->mcu.hard_ver[MCU_HARDVER_LEN] = '\0';
+            pos+=MCU_HARDVER_LEN;
 
-            memcpy( pgc->mcu.product_key,Rxbuf+pos,32);
-            pgc->mcu.product_key[32] = '\0';
-            pos+=32;
+            memcpy( pgc->mcu.soft_ver,Rxbuf+pos,MCU_SOFTVER_LEN);
+            pgc->mcu.soft_ver[MCU_SOFTVER_LEN] = '\0';
+            pos+=MCU_SOFTVER_LEN;
+
+            memcpy( pgc->mcu.product_key,Rxbuf+pos,PK_LEN);
+            pgc->mcu.product_key[PK_LEN] = '\0';
+            pos+=PK_LEN;
 
             pTime = (u16*)&Rxbuf[pos];
             pgc->mcu.passcodeEnableTime = ntohs(*pTime);
+            pos+=2;
+
+
+            if( length >= (pos+MCU_MCUATTR_LEN+1 - MCU_P0_LEN - MCU_CMD_LEN) ) //pos+8+1:pos + mcu_attr(8B)+checksum(1B)
+            {
+                memcpy( pgc->mcu.mcu_attr,Rxbuf+pos, MCU_MCUATTR_LEN);
+            }
+            else
+            {
+                memset( pgc->mcu.mcu_attr, 0, MCU_MCUATTR_LEN);
+            }
 
             GAgent_Printf( GAGENT_INFO,"GAgent get local info ok.");
             GAgent_Printf( GAGENT_INFO,"MCU Protocol Vertion:%s.",pgc->mcu.protocol_ver);
@@ -234,6 +293,11 @@ void Local_GetInfo( pgcontext pgc )
             GAgent_Printf( GAGENT_INFO,"MCU old product_key:%s.",pgc->gc.old_productkey);
             GAgent_Printf( GAGENT_INFO,"MCU product_key:%s.",pgc->mcu.product_key);
             GAgent_Printf( GAGENT_INFO,"MCU passcodeEnableTime:%d s.\r\n",pgc->mcu.passcodeEnableTime);
+             for( i=0;i<MCU_MCUATTR_LEN;i++ )
+             {
+                 GAgent_Printf( GAGENT_INFO,"MCU mcu_attr[%d]= 0x%x.",i, pgc->mcu.mcu_attr[i]);
+             }
+            
             if( strcmp( pgc->mcu.product_key,pgc->gc.old_productkey )!=0 )
             {
                 GAgent_UpdateInfo( pgc,pgc->mcu.product_key );
@@ -250,6 +314,78 @@ void Local_GetInfo( pgcontext pgc )
         GAgent_DevReset();
     }
 }
+/****************************************************************
+FunctionName    :   GAgent_Reset
+Description     :   update old info and send disable device to 
+                    cloud,then reboot.
+pgc             :   global staruc 
+return          :   NULL
+Add by Alex.lin     --2015-04-18
+****************************************************************/
+void GAgent_Reset( pgcontext pgc )
+{
+    memset( pgc->gc.old_did,0,DID_LEN);
+    memset( pgc->gc.old_wifipasscode,0,PASSCODE_MAXLEN + 1);
+  
+    memcpy( pgc->gc.old_did,pgc->gc.DID,DID_LEN );
+    memcpy( pgc->gc.old_wifipasscode,pgc->gc.wifipasscode,PASSCODE_MAXLEN + 1 );
+      
+    GAgent_Printf(GAGENT_INFO,"Reset GAgent and goto Disable Device !");  
+    Cloud_ReqDisable( pgc );
+    GAgent_SetCloudConfigStatus( pgc,CLOUD_RES_DISABLE_DID );
+
+    memset( pgc->gc.wifipasscode,0,PASSCODE_MAXLEN + 1);
+    memset( pgc->gc.wifi_ssid,0,SSID_LEN_MAX + 1 );
+    memset( pgc->gc.wifi_key,0, WIFIKEY_LEN_MAX + 1 );
+    memset( pgc->gc.DID,0,DID_LEN);
+    
+    memset( (uint8*)&(pgc->gc.cloud3info),0,sizeof( GAgent3Cloud ) );
+    
+    memset( pgc->gc.GServer_ip,0,IP_LEN_MAX + 1);
+    memset( pgc->gc.m2m_ip,0,IP_LEN_MAX + 1);
+    make_rand(pgc->gc.wifipasscode);
+
+    pgc->gc.flag &=~XPG_CFG_FLAG_CONNECTED;
+    GAgent_DevSaveConfigData( &(pgc->gc) );
+    //2 second just for disable device time.
+    sleep(2);
+    GAgent_DevReset();
+}
+/****************************************************************
+        FunctionName        :   GAgent_LocalSendGAgentstatus.
+        Description         :   check Gagent's status whether it is update.
+        Add by Nik.chen     --2015-04-18
+****************************************************************/
+void GAgent_LocalSendGAgentstatus(pgcontext pgc,uint32 dTime_s )
+{
+    uint16 GAgentStatus = 0; 
+    uint16 LastGAgentStatus = 0; 
+   
+    if( (pgc->rtinfo.GAgentStatus) != (pgc->rtinfo.lastGAgentStatus) )
+    {
+          GAgentStatus = pgc->rtinfo.GAgentStatus&LOCAL_GAGENTSTATUS_MASK;
+          LastGAgentStatus = pgc->rtinfo.lastGAgentStatus&LOCAL_GAGENTSTATUS_MASK;
+          GAgent_Printf( GAGENT_INFO,"GAgentStatus change, lastGAgentStatus=0x%04x, newGAgentStatus=0x%04x", LastGAgentStatus, GAgentStatus);
+          pgc->rtinfo.lastGAgentStatus = pgc->rtinfo.GAgentStatus&LOCAL_GAGENTSTATUS_MASK;
+
+          memcpy((pgc->rtinfo.Txbuf->ppayload), (uint8 *)&GAgentStatus, 2);
+          pgc->rtinfo.Txbuf->pend =  (pgc->rtinfo.Txbuf->ppayload)+2;
+          pgc->rtinfo.updatestatusinterval =  0; 
+          //GAgent_Printf(GAGENT_CRITICAL,"updateGagentstatusLast time=%d", (pgc->rtinfo.send2LocalLastTime));
+         GAgent_LocalDataWriteP0( pgc,pgc->rtinfo.local.uart_fd, (pgc->rtinfo.Txbuf), WIFI_STATUS2MCU );
+    }
+
+     pgc->rtinfo.updatestatusinterval+= dTime_s;
+
+    if( (pgc->rtinfo.updatestatusinterval)  > LOCAL_GAGENTSTATUS_INTERVAL)
+    {
+        pgc->rtinfo.updatestatusinterval = 0;
+        GAgentStatus = pgc->rtinfo.GAgentStatus&LOCAL_GAGENTSTATUS_MASK;
+        memcpy((pgc->rtinfo.Txbuf->ppayload), (uint8 *)&GAgentStatus, 2);
+        pgc->rtinfo.Txbuf->pend =  (pgc->rtinfo.Txbuf->ppayload)+2;
+        GAgent_LocalDataWriteP0( pgc,pgc->rtinfo.local.uart_fd, (pgc->rtinfo.Txbuf), WIFI_STATUS2MCU );
+    }
+}
 void GAgent_LocalInit( pgcontext pgc )
 {
     GAgent_LocalDataIOInit( pgc );
@@ -258,6 +394,26 @@ void GAgent_LocalInit( pgcontext pgc )
     GAgent_RegisterSendDataHook( serial_write );
     Local_GetInfo( pgc );
 }
+void GAgent_LocalTick( pgcontext pgc,uint32 dTime_s )
+{
+    pgc->rtinfo.local.oneShotTimeout+=dTime_s;
+    if( pgc->rtinfo.local.oneShotTimeout >= MCU_HEARTBEAT )
+    {
+        if( pgc->rtinfo.local.timeoutCnt> 3 )
+        {
+            GAgent_Printf(GAGENT_CRITICAL,"Local heartbeat time out ...");
+            GAgent_DevReset();
+        }
+        else
+        {
+            pgc->rtinfo.local.oneShotTimeout = 0;
+            pgc->rtinfo.local.timeoutCnt++;
+            resetPacket( pgc->rtinfo.Rxbuf );
+            GAgent_Printf(GAGENT_CRITICAL,"Local ping...");
+            GAgent_LocalDataWriteP0( pgc,pgc->rtinfo.local.uart_fd, pgc->rtinfo.Rxbuf,WIFI_PING2MCU );
+        }
+    }
+}
 uint32 GAgent_LocalDataHandle( pgcontext pgc,ppacket Rxbuf,int32 RxLen /*,ppacket Txbuf*/ )
 {
     int32 i=0;
@@ -265,52 +421,65 @@ uint32 GAgent_LocalDataHandle( pgcontext pgc,ppacket Rxbuf,int32 RxLen /*,ppacke
     uint8 sn=0,checksum=0;
     uint8 *localRxbuf=NULL;
     uint32 ret = 0;
-  
+    uint8 configType=0;
     if( RxLen>0 )
     {
         localRxbuf = Rxbuf->phead;
         
-        //TODO 
         cmd = localRxbuf[4];
         sn  = localRxbuf[5];
         checksum = GAgent_SetCheckSum( localRxbuf,RxLen-1 );
         if( checksum!=localRxbuf[RxLen-1] )
         {
-            GAgent_Printf( GAGENT_ERROR,"local data checksum error !");
+            GAgent_Printf( GAGENT_ERROR,"local data cmd=%02x checksum error !",cmd );
+            GAgent_DebugPacket(Rxbuf->phead, RxLen);
             //  Todo tell mcu 
             return 1;
         }
+
         switch( cmd )
         {
             case MCU_REPORT:
+                Local_Ack2MCU( pgc->rtinfo.local.uart_fd,sn,cmd+1 );
                 Rxbuf->type = SetPacketType( Rxbuf->type,LOCAL_DATA_IN,1 );
                 ParsePacket( Rxbuf );
-                Rxbuf->type = SetPacketType( Rxbuf->type,CLOUD_DATA_OUT,1 );
-                Rxbuf->type = SetPacketType( Rxbuf->type,LAN_TCP_DATA_OUT,1 );
                 ret = 1;
                 break;
             case MCU_CONFIG_WIFI:
+                Local_Ack2MCU( pgc->rtinfo.local.uart_fd,sn,cmd+1 );
+                configType = localRxbuf[8];
+                GAgent_Config( configType,pgc );
                 ret = 0;
                 break;
             case MCU_RESET_WIFI:
+                Local_Ack2MCU( pgc->rtinfo.local.uart_fd,sn,cmd+1 );
+                GAgent_Reset( pgc );
                 ret = 0;
                 break;
             case WIFI_PING2MCU_ACK:
-               ret = 0 ;
+                pgc->rtinfo.local.timeoutCnt=0;
+                GAgent_Printf( GAGENT_CRITICAL,"Local pong...");
+                ret = 0 ;
                 break;
             case MCU_CTRL_CMD_ACK:
                 ret = 0;
                  break;
             case WIFI_TEST:
+                Local_Ack2MCU( pgc->rtinfo.local.uart_fd,sn,cmd+1 );
                 ret = 0;
                 break;
+			case MCU_ENABLE_BIND:		
+				Local_Ack2MCU( pgc->rtinfo.local.uart_fd,sn,cmd+1 );
+				pgc->mcu.passcodeTimeout = pgc->mcu.passcodeEnableTime;
+				GAgent_SetWiFiStatus( pgc,WIFI_MODE_BINDING,1 );	
+				ret = 0;
+				break;
             default:
                 ret = 0;
                 break;
 
         }
         //...
-        
     }
 
   return ret;
@@ -323,11 +492,13 @@ void GAgent_Local_Handle( pgcontext pgc,ppacket Rxbuf,int32 length )
     if( localDataLen>0 )
     {
         uint32 ret;
+        
         ret = GAgent_LocalDataHandle( pgc, pgc->rtinfo.Rxbuf, localDataLen );
         if(ret > 0)
         {
             dealPacket(pgc, pgc->rtinfo.Rxbuf);
         }
+        
     }
 
 }

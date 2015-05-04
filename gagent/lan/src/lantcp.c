@@ -8,7 +8,16 @@
 ****************************************************************/
 void Lan_setClientTimeOut(pgcontext pgc, int32 channel)
 {
-    pgc->ls.tcpClient[channel].timeout = LAN_CLIENT_MAXLIVETIME;
+     uint16 GAgentStatus=0;
+     GAgentStatus = pgc->rtinfo.GAgentStatus;
+    if( (GAgentStatus&WIFI_MODE_AP)== WIFI_MODE_AP )
+    {
+        pgc->ls.tcpClient[channel].timeout = LAN_CLIENT_MAXLIVETIME*5;
+    }
+    if( (GAgentStatus&WIFI_MODE_STATION) == WIFI_MODE_STATION )
+    {
+        pgc->ls.tcpClient[channel].timeout = LAN_CLIENT_MAXLIVETIME;
+    }
 }
 
 int32 Lan_AddTcpNewClient(pgcontext pgc, int fd, struct sockaddr_t *addr)
@@ -89,6 +98,24 @@ int32 Lan_tcpClientDataHandle(pgcontext pgc, uint32 channel,
 
     if(recDataLen <= 0)
     {
+        if(pgc->ls.tcpClient[channel].fd > 0)
+        {
+            close(pgc->ls.tcpClient[channel].fd);
+            pgc->ls.tcpClient[channel].fd = INVALID_SOCKET;
+            pgc->ls.tcpClient[channel].isLogin = LAN_CLIENT_LOGIN_FAIL;
+            pgc->ls.tcpClient[channel].timeout = 0;
+           
+            if(pgc->ls.tcpClientNums > 0)
+            {
+                pgc->ls.tcpClientNums--;
+            }
+
+            if(0 == (pgc->ls.tcpClientNums + pgc->rtinfo.waninfo.wanclient_num))
+            {
+                GAgent_SetWiFiStatus( pgc,WIFI_CLIENT_ON,0 );
+            }
+            
+        }
         return RET_FAILED;
     }
 
@@ -97,11 +124,32 @@ int32 Lan_tcpClientDataHandle(pgcontext pgc, uint32 channel,
 }
 
 /****************************************************************
+        FunctionName        :   Lan_checkAuthorization.
+        Description         :      check Authorization.
+        Add by Nik.chen     --2015-04-18
+****************************************************************/
+static uint32 Lan_checkAuthorization( pgcontext pgc,  int clientIndex)
+{
+  
+    if((LAN_CLIENT_LOGIN_FAIL == pgc->ls.tcpClient[clientIndex].isLogin)
+        &&(-1 != pgc->ls.tcpClient[clientIndex].fd))
+    {
+        close(pgc->ls.tcpClient[clientIndex].fd);
+        pgc->ls.tcpClient[clientIndex].fd = -1;
+
+        GAgent_Printf(GAGENT_INFO, "Illegal tcp client login!!! clientid[%d] ",clientIndex);
+         return 0;
+     }
+     
+    return 1;
+}
+
+/****************************************************************
         FunctionName        :   Lan_handleLogin.
         Description         :      Lan Tcp logining.
         Add by Will.zhou     --2015-03-10
 ****************************************************************/
-void Lan_handleLogin( pgcontext pgc, ppacket src, ppacket dest, int clientIndex)
+static void Lan_handleLogin( pgcontext pgc, ppacket src, ppacket dest, int clientIndex)
 {
     int i;
     int ret;
@@ -114,16 +162,19 @@ void Lan_handleLogin( pgcontext pgc, ppacket src, ppacket dest, int clientIndex)
     fd = pgc->ls.tcpClient[clientIndex].fd;
 
     /* verify passcode */
-    if( !memcmp((src->phead + 10), pgc->gc.wifipasscode, 10) )
+    if( !memcmp((src->phead + 10), pgc->gc.wifipasscode, strlen( pgc->gc.wifipasscode)) )
     {
         /* login success */
         isLogin = LAN_CLIENT_LOGIN_SUCCESS;
-        pgc->ls.tcpClientNums++;
+         pgc->ls.tcpClientNums++;
+         GAgent_SetWiFiStatus( pgc,WIFI_CLIENT_ON,1 );
+    
         GAgent_Printf(GAGENT_INFO, "LAN login success! clientid[%d] ",clientIndex);
     }
     else
     {
         isLogin = LAN_CLIENT_LOGIN_FAIL;
+        
         GAgent_Printf(GAGENT_WARNING,"LAN login fail. your passcode:%s",
                         src->phead + 10);
        
@@ -151,6 +202,12 @@ void Lan_handleLogin( pgcontext pgc, ppacket src, ppacket dest, int clientIndex)
      pgc->ls.tcpClient[clientIndex].isLogin = isLogin;
 
      send(pgc->ls.tcpClient[clientIndex].fd, pbuf, 9, 0);
+
+     if(LAN_CLIENT_LOGIN_FAIL == isLogin)
+     {
+            close(pgc->ls.tcpClient[clientIndex].fd);
+            pgc->ls.tcpClient[clientIndex].fd = -1;
+     }
     
 }
 
@@ -159,11 +216,12 @@ void Lan_handleLogin( pgcontext pgc, ppacket src, ppacket dest, int clientIndex)
         Description         :      reponsing passcode to client for Binding.
         Add by Will.zhou     --2015-03-10
 ****************************************************************/
-void Lan_handlePasscode( pgcontext pgc, ppacket src, int clientIndex)
+static void Lan_handlePasscode( pgcontext pgc, ppacket src, int clientIndex)
 {
     int i;
     int ret;
     int32 fd;
+    uint16 passcodeLen;
     uint8 *pbuf;
 
     resetPacket(src);
@@ -186,29 +244,124 @@ void Lan_handlePasscode( pgcontext pgc, ppacket src, int clientIndex)
     pbuf[6] = 0x00;
     pbuf[7] = 0x07;
 
-    /* passcode len */
-    pbuf[8] = 0x00;
-    pbuf[9] = 0x0a;
+    /* passcode len */ 
+    passcodeLen = htons(strlen( pgc->gc.wifipasscode ));
+    *(uint16 *)(pbuf + 8) =  passcodeLen;
 
     /* passcode */
-    for(i=0;i<pbuf[9];i++)
+    for(i=0;i < passcodeLen;i++)
     {
     	pbuf[10+i] = pgc->gc.wifipasscode[i];
     }
 
-    ret = send(fd, pbuf, 20, 0);
-    GAgent_Printf(GAGENT_INFO,"Send passcode(%s) to client[%d][send data len:%d] ", 
-        pgc->gc.wifipasscode, fd, ret);
+    if((pgc->rtinfo.GAgentStatus & WIFI_MODE_BINDING) == WIFI_MODE_BINDING)//enable bind 
+	{
+		ret = send(fd, pbuf, 20, 0);			
+        GAgent_Printf(GAGENT_INFO,"Send passcode(%s) to client[%d][send data len:%d] ", 
+        pgc->gc.wifipasscode, fd, ret);		
+	}
+	else
+	{
+		/* passcode len */
+    	pbuf[8] = 0x00;
+    	pbuf[9] = 0x00;
+    	
+		ret = send(fd, pbuf, 10, 0);
+        GAgent_Printf(GAGENT_ERROR,"timeout,client[%d]cannot bind,close socket", fd);
+		close(fd);
+		pgc->ls.tcpClient[clientIndex].fd = -1;
+	}
 
     return;
 }
+
+/****************************************************************
+        FunctionName        :   GAgent_Lan_SendDevInfo.
+        Description         :   	send Dev Info to App.
+        Add by Eric.gong     --2015-04-22
+****************************************************************/
+void GAgent_Lan_SendDevInfo(pgcontext pgc,ppacket pTxBuf,int32 clientIndex)
+{
+    varc sendvarc;
+    uint32 dataLen;
+	uint16 wifi_firmware_ver_len;
+    int i;
+	int offset=0;
+    
+    /* protocol */
+    *(uint32 *)pTxBuf->phead = htonl(GAGENT_PROTOCOL_VERSION);
+	offset += LAN_PROTOCOL_HEAD_LEN;
+    /* varLen */
+	/* flag(1B) | cmd(2B) | p0(116B)  */
+    dataLen = 1+2+116;
+    sendvarc = Tran2varc(dataLen);  
+    for(i=0;i<sendvarc.varcbty;i++)
+    {
+        pTxBuf->phead[offset] = sendvarc.var[i];
+        offset++;
+    }
+    /* flag */
+    pTxBuf->phead[offset] = 0x00;
+	offset +=1;
+    /* cmd */
+    pTxBuf->phead[offset] = 0x00;
+	pTxBuf->phead[offset+1] = 0x14;
+	offset +=2;
+	/* wifi_hard_ver */
+	strcpy( pTxBuf->phead+offset,WIFI_HARDVER);
+	offset +=8;
+	/* wifi_soft_ver */
+	strcpy( pTxBuf->phead+offset,WIFI_SOFTVAR);
+	offset +=8;
+	/* mcu_hard_ver */
+	for(i=0;i<8;i++)
+		pTxBuf->phead[offset+i]=pgc->mcu.hard_ver[i];
+	offset +=8;
+	/* mcu_soft_ver */
+	for(i=0;i<8;i++)
+		pTxBuf->phead[offset+i]=pgc->mcu.soft_ver[i];
+	offset +=8;
+	/* protocol version of payload */
+	for(i=0;i<8;i++)
+		pTxBuf->phead[offset+i]=pgc->mcu.p0_ver[i];
+	offset +=8;
+	/* wifi_firmware_id */
+	for(i=0;i<8;i++)
+		 pTxBuf->phead[offset+i]=0;
+	offset +=8;
+	/* wifi_firmware_ver_len */
+	wifi_firmware_ver_len = pgc->gc.FirmwareVerLen[1] | (pgc->gc.FirmwareVerLen[0] << 8);
+	if(wifi_firmware_ver_len > FIRMWARE_LEN_MAX)
+	{
+		wifi_firmware_ver_len = FIRMWARE_LEN_MAX;	
+		pgc->gc.FirmwareVer[FIRMWARE_LEN_MAX - 1] = 0;
+	}
+	*(uint16 *)(pTxBuf->phead + offset) = htons(wifi_firmware_ver_len);
+	offset +=2;
+	/* wifi_firmware_ver */
+	for(i = 0;i < wifi_firmware_ver_len;i++)
+	 	pTxBuf->phead[offset+i]=pgc->gc.FirmwareVerLen[i];
+	offset +=wifi_firmware_ver_len;	
+	/* produckt_key_len */
+	*(uint16 *)(pTxBuf->phead + offset) = htons(32);
+	 offset +=2;
+	/* produckt_key */
+	for(i=0;i<32;i++)
+		 pTxBuf->phead[offset+i]=pgc->mcu.product_key[i];
+	offset +=32;
+
+    if(pgc->ls.tcpClient[clientIndex].fd > 0 )
+    {				
+        send(pgc->ls.tcpClient[clientIndex].fd, pTxBuf->phead,offset, 0); 
+    }
+}      
 
 /****************************************************************
         FunctionName        :   Lan_AckHeartbeak.
         Description         :      Gagent response client heartbeat
         Add by Will.zhou     --2015-03-10
 ****************************************************************/
-void Lan_AckHeartbeak( pgcontext pgc, ppacket src, int clientIndex )
+static void Lan_AckHeartbeak( pgcontext pgc, ppacket src, int clientIndex )
 {
     int32 fd;
     uint8 *pbuf;
@@ -259,6 +412,14 @@ int32 Lan_dispatchTCPData(pgcontext pgc, ppacket prxBuf, ppacket ptxBuf, int32 c
     prxBuf->type = SetPacketType( prxBuf->type,LAN_TCP_DATA_IN,1 );
     ret = ParsePacket(prxBuf);
 
+    if((cmd != GAGENT_LAN_CMD_BINDING) && (cmd != GAGENT_LAN_CMD_LOGIN)
+		&& (cmd != GAGENT_LAN_CMD_INFO))
+    {
+        ret = Lan_checkAuthorization(pgc, clientIndex);
+        if(0 == ret)
+            return ret;
+    }
+
     ret = 0;
     switch (cmd)
     {
@@ -284,8 +445,11 @@ int32 Lan_dispatchTCPData(pgcontext pgc, ppacket prxBuf, ppacket ptxBuf, int32 c
     case GAGENT_LAN_CMD_LOG:
         break;
     case GAGENT_LAN_CMD_INFO:
+		resetPacket(ptxBuf);
+		GAgent_Lan_SendDevInfo(pgc, ptxBuf, clientIndex);
         break;
     case GAGENT_LAN_CMD_TICK:
+        GAgent_Printf(GAGENT_WARNING,"LAN TCP heartbeat...");
         Lan_AckHeartbeak(pgc, ptxBuf, clientIndex);
         break;
     case GAGENT_LAN_CMD_TEST:
@@ -312,6 +476,7 @@ int32 LAN_tcpClientInit(pgcontext pgc)
     {
         memset(&(pgc->ls.tcpClient[i]), 0x0, sizeof(pgc->ls.tcpClient[i]));
         pgc->ls.tcpClient[i].fd = -1;
+        pgc->ls.tcpClient[i].isLogin = LAN_CLIENT_LOGIN_FAIL;
         pgc->ls.tcpClient[i].timeout = 0;
     }
 

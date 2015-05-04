@@ -62,6 +62,7 @@ int32 Http_GET( const int8 *host,const int8 *did,int32 socketid )
     ret = send( socketid, getBuf,totalLen,0 );
     GAgent_Printf(GAGENT_DEBUG,"Sent provision:\n %s\n", getBuf);
     free(getBuf);
+    getBuf = NULL;
 
     if(ret<=0 ) 
     {
@@ -160,10 +161,12 @@ int32 Http_ReadSocket( int32 socket,int8 *Http_recevieBuf,int32 bufLen )
     fd_set readfds;
     int32 i=0;
     int32 bytes_rcvd = 0; 
+    if( socket<=0 )
+        return bytes_rcvd;
     memset(Http_recevieBuf, 0, bufLen);  
 
     bytes_rcvd = recv(socket, Http_recevieBuf, bufLen, 0 );
-    if((bytes_rcvd) <= 0)
+    if(bytes_rcvd <= 0)
     {
         GAgent_Printf(GAGENT_DEBUG,"Close HTTP Socket[%d].", socket);
         MBM;
@@ -184,11 +187,20 @@ int32 Http_Response_Code( uint8 *Http_recevieBuf )
     int8* p_start = NULL;
     int8* p_end =NULL; 
     int8 re_code[10] ={0};
+    memset(re_code,0,sizeof(re_code));
 
     p_start = strstr( Http_recevieBuf," " );
-    p_end   = strstr( ++p_start," " );
+    if(NULL == p_start)
+    {
+        return RET_FAILED;
+    }
+    p_end = strstr( ++p_start," " );
     if(p_end)
     {
+        if(p_end - p_start > sizeof(re_code))
+        {
+            return RET_FAILED;
+        }
         memcpy( re_code,p_start,(p_end-p_start) );
     }
     
@@ -199,13 +211,13 @@ int32 Http_Response_DID( uint8 *Http_recevieBuf,int8 *DID )
 {
     int8 *p_start = NULL;
     int8 *p_end =NULL;
-    memset(DID,0,24);
+    memset(DID,0,DID_LEN);
     p_start = strstr( Http_recevieBuf,"did=");
     if( p_start==NULL )
         return 1;
     p_start = p_start+strlen("did=");
-    memcpy(DID,p_start,22);
-    DID[22] ='\0';             
+    memcpy(DID,p_start,DID_LEN);
+    DID[DID_LEN - 2] ='\0';             
     return 0;    
 }
 int32 Http_getdomain_port( uint8 *Http_recevieBuf,int8 *domain,int32 *port )

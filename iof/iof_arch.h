@@ -3,7 +3,6 @@
 #include "gagent_typedef.h"
 #include "platform.h"
 //return wifistatus. 
-uint16 GAgent_DevCheckWifiStatus( void );
 void CoreInit( void );
 void GAgent_DevReset();
 void GAgent_DevInit( pgcontext pgc );
@@ -16,16 +15,24 @@ void GAgent_DevLED_Green( uint8 onoff );
 
 uint32 GAgent_DevGetConfigData( gconfig *pConfig );
 uint32 GAgent_DevSaveConfigData( gconfig *pConfig);
-
 void GAgent_LocalDataIOInit( pgcontext pgc );
 
+/*********Net event function************/
+// return the new wifistatus like wifistation-up wifistation-down ...
+uint16 GAgent_DevCheckWifiStatus( uint16 wifistatus  );
+void GAgent_OpenAirlink( int32 timeout_s );
+void GAgent_AirlinkResult( pgcontext pgc );
+int8 GAgent_DRVGetWiFiStartMode( pgcontext pgc );
+int8 GAgent_DRVSetWiFiStartMode( pgcontext pgc,uint32 mode );
+int16 GAgent_DRV_WiFi_SoftAPModeStart( const int8* ap_name,const int8 *ap_password,int16 wifiStatus );
+int16 GAgent_DRVWiFi_StationCustomModeStart(int8 *StaSsid,int8 *StaPass,uint16 wifiStatus );
 
-/*********Net function************/
-uint32 GAgent_GetHostByName( int8 *domain, int8 *IPAddress);
-int32 GAgent_accept(int32 sockfd );
-int32 GAgent_listen(int32 sockfd, int32 backlog);
-uint32 GAgent_sendto(int32  sockfd,  const  void  *buf, int32 len,  int32 flags);
-
+/*********Net socket function************/
+uint32 GAgent_GetHostByName( int8 *domain, int8 *IPAddress );
+int32  GAgent_accept( int32 sockfd );
+int32  GAgent_listen( int32 sockfd, int32 backlog );
+uint32 GAgent_sendto( int32  sockfd,  const  void  *buf, int32 len,  int32 flags );
+int32 GAgent_CreateTcpServer( uint16 tcp_port );
 
                 
 /****************************************************************
@@ -38,9 +45,8 @@ uint32 GAgent_sendto(int32  sockfd,  const  void  *buf, int32 len,  int32 flags)
 int32 GAgent_connect( int32 iSocketId, uint16 port,
                         int8 *ServerIpAddr,int8 flag);
 
-int8 GAgent_DRVGetWiFiMode( pgcontext pgc );
-int16 GAgent_DRV_WiFi_SoftAPModeStart( const int8* ap_name,const int8 *ap_password,int16 wifiStatus );
-int16 GAgent_DRVWiFi_StationCustomModeStart(int8 *StaSsid,int8 *StaPass,uint16 wifiStatus );
+
+
 void DRV_ConAuxPrint( char *buffer, int len, int level );
 
 

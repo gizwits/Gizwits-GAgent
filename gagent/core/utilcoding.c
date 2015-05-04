@@ -104,7 +104,7 @@ uint8 GAgent_SetCheckSum(  uint8 *buf,int packLen )
 }
 int8 GAgent_CheckSum( int8 *data,int dataLen )
 {
-    int8 checksum=0;
+    uint8 checksum=0;
     int i=0;
     for( i=0;i<dataLen;i++ )
       checksum+=data[i];
@@ -137,25 +137,28 @@ uint8 GAgent_NewSN(void)
 *       return   : varc
 *       Add by alex 2014-04-20
 ***************************************************/
-varc Tran2varc(short remainLen)
+varc Tran2varc(uint32 remainLen)
 {
-    varc Tmp;
+    int i;
+	varc Tmp;
+	
     memset(&Tmp, 0x0, sizeof(Tmp));
-    if (remainLen <= 127) 
-    {
-        //fixed_header[0] = remainLen;         
-        Tmp.var[0] = remainLen;
-        Tmp.varcbty = 1;
-    } 
-    else 
-    {
-        // first byte is remainder (mod) of 128, then set the MSB to indicate more bytes         
-        Tmp.var[0] = remainLen % 128;
-        Tmp.var[0]=Tmp.var[0] | 0x80;
-        // second byte is number of 128s          
-        Tmp.var[1] = remainLen / 128;    
-        Tmp.varcbty=2;
-    }
+
+	Tmp.varcbty = 1;
+	for(i = 0; i < 4; i++)
+	{
+		Tmp.var[i] = remainLen % 128;
+		remainLen >>= 7;
+		if(remainLen)
+		{
+			Tmp.var[i] |= 0x80;
+			Tmp.varcbty++;
+		}
+		else
+		{
+			break;
+		}
+	}
     return Tmp;
 }
 
@@ -205,16 +208,9 @@ void resetPacket( ppacket pbuf )
     pbuf->phead  = pbuf->allbuf+BUF_HEADLEN;
     pbuf->ppayload = pbuf->allbuf+BUF_HEADLEN;
     pbuf->pend   = pbuf->allbuf+BUF_HEADLEN;
+    memset( pbuf->allbuf,0,pbuf->totalcap );
 }
-//copy src to dest
-void copyPacket( ppacket src,ppacket dest )
-{
-    resetPacket( dest );
-    dest->type = (src->type);
-    memcpy(dest->phead,src->phead,((src->pend)-(src->phead)));
-    dest->ppayload = (dest->phead)+((src->ppayload)-(src->phead));
-    dest->pend = (dest->phead)+((src->pend)-(src->phead));
-}
+
 /***************************************************
         FunctionName    :   ParsePacket.
         Description     :   set the source phead ppayload
@@ -229,16 +225,31 @@ uint32 ParsePacket( ppacket pRxBuf )
     int32 datalen=0;
     uint8* pHead=NULL;
     int32 ret=0;
+
+    uint16 cmd=0;
+    uint16 *pcmd=NULL;
     GAgent_Printf(GAGENT_DEBUG,"\r\n");
     GAgent_Printf(GAGENT_DEBUG,"IN %s packet type : %04x",__FUNCTION__ ,pRxBuf->type );
     if( ((pRxBuf->type)&(CLOUD_DATA_IN)) == CLOUD_DATA_IN )
     {
-        
+
         datalen = mqtt_parse_rem_len( pRxBuf->phead+3 ); 
         varlen = mqtt_num_rem_len_bytes( pRxBuf->phead+3 );
         
-        pRxBuf->ppayload = pRxBuf->phead+4+varlen+1+2;
-        pRxBuf->pend   = pRxBuf->phead+4+varlen+datalen;
+        pcmd = (u16*)&(pRxBuf->phead[4+varlen+1]);
+        cmd = ntohs( *pcmd );  
+
+        GAgent_Printf( GAGENT_INFO,"CLOUD_DATA_IN cmd : %04X", cmd );
+        if( cmd == 0x0090 )
+        {
+            pRxBuf->ppayload = pRxBuf->phead+4+varlen+1+2;
+        }
+        if( cmd ==0x0093 )
+        {//with sn.
+            pRxBuf->ppayload = pRxBuf->phead+4+varlen+1+2+4;          
+        }
+
+        pRxBuf->pend   = pRxBuf->phead+4+varlen+datalen;  
 
         GAgent_Printf( GAGENT_DEBUG," ReSet Data Type : %04X - CLOUD_DATA_IN", pRxBuf->type );
         pRxBuf->type = SetPacketType( pRxBuf->type,CLOUD_DATA_IN,0 );
@@ -263,8 +274,8 @@ uint32 ParsePacket( ppacket pRxBuf )
         datalen = mqtt_parse_rem_len( pRxBuf->phead+3 ); 
         varlen = mqtt_num_rem_len_bytes( pRxBuf->phead+3 );
         
-        pRxBuf->ppayload = pRxBuf->phead+4+varlen+1+2;
-        pRxBuf->pend   = pRxBuf->phead+4+varlen+datalen;
+        pRxBuf->ppayload = pRxBuf->phead + LAN_PROTOCOL_HEAD_LEN + varlen + LAN_PROTOCOL_FLAG_LEN + LAN_PROTOCOL_CMD_LEN;
+        pRxBuf->pend   = pRxBuf->phead + LAN_PROTOCOL_HEAD_LEN + varlen + datalen;
 
         GAgent_Printf( GAGENT_DEBUG," ReSet Data Type : %04X - LAN_TCP_DATA_IN", pRxBuf->type );
         pRxBuf->type   = SetPacketType( pRxBuf->type,LAN_TCP_DATA_IN,0 );
@@ -286,17 +297,19 @@ int8 dealPacket( pgcontext pgc, ppacket pTxBuf )
     if( ((pTxBuf->type)&(LOCAL_DATA_OUT)) == LOCAL_DATA_OUT )
     {
         GAgent_Printf( GAGENT_DEBUG,"packet Type : LOCAL_DATA_OUT ");
-        GAgent_LocalDataWriteP0( pgc,pgc->rtinfo.uart_fd, pTxBuf );
+        GAgent_LocalDataWriteP0( pgc,pgc->rtinfo.local.uart_fd, pTxBuf,MCU_CTRL_CMD );
         GAgent_Printf( GAGENT_DEBUG,"ReSetpacket Type : LOCAL_DATA_OUT ");
         pTxBuf->type = SetPacketType(pTxBuf->type, LOCAL_DATA_OUT, 0);
 
     }
     if( ((pTxBuf->type)&(CLOUD_DATA_OUT)) == CLOUD_DATA_OUT )
     {
-        GAgent_Printf( GAGENT_DEBUG,"packet Type : CLOUD_DATA_OUT ");
-        GAgent_Cloud_SendData(  pgc,pTxBuf,(pTxBuf->pend)-(pTxBuf->ppayload) );
-        GAgent_Printf( GAGENT_DEBUG,"ReSetpacket Type : CLOUD_DATA_OUT ");
-
+        if( ((pgc->rtinfo.GAgentStatus)&WIFI_CLOUD_CONNECTED)  == WIFI_CLOUD_CONNECTED )
+        {
+            GAgent_Printf( GAGENT_DEBUG,"packet Type : CLOUD_DATA_OUT ");
+            GAgent_Cloud_SendData(  pgc,pTxBuf,(pTxBuf->pend)-(pTxBuf->ppayload) );
+            GAgent_Printf( GAGENT_DEBUG,"ReSetpacket Type : CLOUD_DATA_OUT ");
+        }
         pTxBuf->type = SetPacketType(pTxBuf->type, CLOUD_DATA_OUT, 0);
     }
     if( ((pTxBuf->type)&(LAN_TCP_DATA_OUT)) == LAN_TCP_DATA_OUT )

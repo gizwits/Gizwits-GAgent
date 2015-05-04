@@ -8,7 +8,6 @@ void msleep(int m_seconds)
 }
 uint32 GAgent_GetHostByName( int8 *domain, int8 *IPAddress)
 {
-    int ret;
     struct hostent *hptr;
     char   *ptr, **pptr;
     char   str[32];
@@ -17,23 +16,19 @@ uint32 GAgent_GetHostByName( int8 *domain, int8 *IPAddress)
     hptr = gethostbyname2(domain, AF_INET);
     if (hptr == NULL)
     {
-        ret = 1;
         GAgent_Printf(GAGENT_DEBUG," resean : %s\n", hstrerror(h_errno));
-        return ret;
+        return 1;
     }
     pptr=hptr->h_addr_list;
 
     for(; *pptr!=NULL; pptr++)
     {
         inet_ntop(hptr->h_addrtype, *pptr, str, sizeof(str));
-        GAgent_Printf(GAGENT_DEBUG, "Server name %s address:%s", domain, str );
     }
     inet_ntop(hptr->h_addrtype, hptr->h_addr, str, sizeof(str));
-    GAgent_Printf(GAGENT_INFO,"Server name %s first address: %s", domain, str);
+    GAgent_Printf(GAGENT_INFO,"Server name %s  address: %s", domain, str);
     memcpy(IPAddress, str, 32);
-    ret = 0;
-
-    return ret;
+    return 0;
 }
 
 int Gagent_setsocketnonblock(int socketfd)
@@ -80,7 +75,7 @@ uint32 GAgent_GetDevTime_S()
 
 void GAgent_DevReset()
 {
-    GAgent_Printf(GAGENT_INFO,"Please restart GAgent !!!\r\n");
+    GAgent_Printf( GAGENT_CRITICAL,"Please restart GAgent !!!\r\n");
     exit(0);
 }
 void GAgent_DevInit( pgcontext pgc )
@@ -101,7 +96,7 @@ int8 GAgent_DevGetMacAddress( uint8* szmac )
     if( sock_mac == -1)
     {
         perror("create socket falise...mac/n");
-        return ; 
+        return (-1); 
     }
     memset(&ifr_mac,0,sizeof(ifr_mac));
     /*get mac address*/
@@ -109,7 +104,7 @@ int8 GAgent_DevGetMacAddress( uint8* szmac )
     if( (ioctl( sock_mac, SIOCGIFHWADDR, &ifr_mac)) < 0)
     {
         printf("mac ioctl error/n");
-        return ;
+        return (-1);
     }
 
     mac[0] = ifr_mac.ifr_hwaddr.sa_data[0];
@@ -121,17 +116,17 @@ int8 GAgent_DevGetMacAddress( uint8* szmac )
 
     sprintf( szmac,"%02X%02X%02X%02X%02X%02X",mac[0],mac[1],mac[2],mac[3],mac[4],mac[5]);
     close( sock_mac );
+    return 0;
 }
 uint32 GAgent_DevGetConfigData( gconfig *pConfig )
 {
     int ret=0;
-    int fd = open(GAGENT_CONFIG_FILE, O_RDONLY);
+    int fd = open(GAGENT_CONFIG_FILE, O_RDONLY );
     if(-1 == fd)
     {
-        printf("open file fail\r\n");
+        perror("read open file fail");
         return -1;
     }
-
     ret = read(fd, pConfig, sizeof(gconfig));
     GAgent_Printf( GAGENT_INFO,"%s %d ",__FUNCTION__,ret );
     close(fd);
@@ -143,13 +138,14 @@ uint32 GAgent_DevSaveConfigData( gconfig *pConfig )
     int fd = open(GAGENT_CONFIG_FILE, O_RDWR | O_CREAT);
     if(-1 == fd)
     {
-        printf("open file fail\r\n");
+        printf(" write open file fail\r\n");
         return -1;
     }
     
     ret = write(fd, pConfig, sizeof(gconfig));
     GAgent_Printf( GAGENT_INFO,"%s ret=%d",__FUNCTION__,ret  );
     close(fd);
+    return 0;
 }
 void WifiStatusHandler(int event)
 {
@@ -159,7 +155,7 @@ int32 GAgent_connect( int32 iSocketId, uint16 port,
                         int8 *ServerIpAddr,int8 flag)
 {
     int8 ret=0;
-
+    
     struct sockaddr_in Msocket_address;
     GAgent_Printf(GAGENT_INFO,"do connect ip:%s port=%d",ServerIpAddr,port );
 
@@ -172,9 +168,15 @@ int32 GAgent_connect( int32 iSocketId, uint16 port,
 }
 int8 GAgent_DRVGetWiFiMode( pgcontext pgc )
 {
-    pgc->gc.flag  |= XPG_CFG_FLAG_CONNECTED;
+    return ( pgc->gc.flag  |= XPG_CFG_FLAG_CONNECTED );
 
-    return 0;
+  
+}
+
+//return the new wifimode 
+int8 GAgent_DRVSetWiFiStartMode( pgcontext pgc,uint32 mode )
+{
+    return ( pgc->gc.flag +=mode );
 }
 void DRV_ConAuxPrint( char *buffer, int len, int level )
 {
@@ -193,13 +195,13 @@ int32 GAgent_OpenUart( int32 BaudRate,int8 number,int8 parity,int8 stopBits,int8
 }
 void GAgent_LocalDataIOInit( pgcontext pgc )
 {
-    pgc->rtinfo.uart_fd = GAgent_OpenUart( 9600,8,0,0,0 );
-    while( pgc->rtinfo.uart_fd <=0 )
+    pgc->rtinfo.local.uart_fd = GAgent_OpenUart( 9600,8,0,0,0 );
+    while( pgc->rtinfo.local.uart_fd <=0 )
     {
-        pgc->rtinfo.uart_fd = GAgent_OpenUart( 9600,8,0,0,0 );
+        pgc->rtinfo.local.uart_fd = GAgent_OpenUart( 9600,8,0,0,0 );
         sleep(1);
     }
-    //serial_write( pgc->rtinfo.uart_fd,"GAgent Start !!!",strlen("GAgent Start !!!") );
+    //serial_write( pgc->rtinfo.local.uart_fd,"GAgent Start !!!",strlen("GAgent Start !!!") );
     return ;
 }
 
@@ -209,7 +211,8 @@ int16 GAgent_DRV_WiFi_SoftAPModeStart( const int8* ap_name,const int8 *ap_passwo
 }
 int16 GAgent_DRVWiFi_StationCustomModeStart(int8 *StaSsid,int8 *StaPass,uint16 wifiStatus )
 {
-    return WIFI_STATION_STATUS;
+    GAgent_Printf( GAGENT_INFO," Station ssid:%s StaPass:%s",StaSsid,StaPass );
+    return WIFI_STATION_CONNECTED;
     //return 0;
 }
 
@@ -241,6 +244,15 @@ int connect_mqtt_socket(int iSocketId, struct sockaddr_t *Msocket_address, unsig
 {
     return 0;
 
+}
+void GAgent_OpenAirlink( int32 timeout_s )
+{
+    //TODO
+    return ;
+}
+void GAgent_AirlinkResult( pgcontext pgc )
+{
+    return ;
 }
 /*
 void Socket_CreateTCPServer(int tcp_port)

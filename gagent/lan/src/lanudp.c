@@ -2,72 +2,6 @@
 #include "lan.h"
 #include "lanudp.h"
 
-/***********************************************
-*
-*   UdpFlag:    0 respond udp discover 
-*               1 wifi send udp broadcast
-*
-***********************************************/
-static void Build_BroadCastPacket(  pgcontext pgc, int UdpFlag,u8* Udp_Broadcast )
-{
-    int i;    
-    int TempFirmwareVerLen=8;
-    uint8 strMacByte[3] = {0};
-    int len;
-
-    //protocolver
-    *(uint32 *)Udp_Broadcast = htonl(GAGENT_PROTOCOL_VERSION);
-        
-    //varlen =flag(1b)+cmd(2b)+didlen(2b)+did(didLen)+maclen(2b)+mac+firwareverLen(2b)+firwarever+2+productkeyLen
-    Udp_Broadcast[4] =1+2+2+22+2+6+2+TempFirmwareVerLen+2+32; 
-    //flag
-    Udp_Broadcast[5] = 0x00;
-    //cmd 
-    if( UdpFlag==1 ) 
-    {
-        Udp_Broadcast[6] = 0x00; 
-        Udp_Broadcast[7] = 0x05;
-    }
-    if( UdpFlag==0 ) 
-    {
-        Udp_Broadcast[6] = 0x00; 
-        Udp_Broadcast[7] = 0x04;
-    }
-    // didlen
-    Udp_Broadcast[8]=0x00; 
-    Udp_Broadcast[9]=22; 
-    //did
-    for(i=0;i<22;i++)
-    {
-        Udp_Broadcast[10+i]=pgc->gc.DID[i];
-    }                
-    //maclen
-    Udp_Broadcast[9+Udp_Broadcast[9]+1]=0x00;
-    Udp_Broadcast[9+Udp_Broadcast[9]+2]=0x06;//macLEN
-    //mac    
-    strMacByte[2] = 0;
-    for(i=0;i<6;i++)
-    {
-        strMacByte[0] = pgc->minfo.szmac[i*2];
-        strMacByte[1] = pgc->minfo.szmac[i*2 + 1];
-        Udp_Broadcast[9+Udp_Broadcast[9]+3+i] = strtoul(strMacByte, NULL, 16);
-    }
-
-    //firmwarelen
-    Udp_Broadcast[9+Udp_Broadcast[9]+2+7]=0x00;
-    Udp_Broadcast[9+Udp_Broadcast[9]+2+8]=TempFirmwareVerLen;//firmwareVerLen    
-    //firmware
-    memcpy( &Udp_Broadcast[9+Udp_Broadcast[9]+2+9],pgc->gc.FirmwareVer,TempFirmwareVerLen );
-    len = 9+Udp_Broadcast[9]+2+8+TempFirmwareVerLen+1;
-    //productkeylen
-    Udp_Broadcast[len]=0x00;
-    Udp_Broadcast[len+1]=32;
-    len=len+2;
-    memcpy( &Udp_Broadcast[len],pgc->mcu.product_key,32 );
-    len=len+22;
-    //MCU_SendData(Udp_Broadcast,len);
-}
-
 /****************************************************************
         FunctionName        :   GAgent_LANInit.
         Description         :   init clients socket and create tcp/udp server.
@@ -114,27 +48,25 @@ void Lan_CreateUDPServer(int32 *pFd, int udp_port)
     GAgent_Printf(GAGENT_DEBUG,"UDP Server socketid:%d on port:%d", *pFd, udp_port);
     return;
 }
-
 /****************************************************************
         FunctionName        :   Lan_CreateUDPBroadCastServer.
         Description         :   create udp BroadCastServer.
         Add by Will.zhou     --2015-03-10
 ****************************************************************/
-void Lan_CreateUDPBroadCastServer(int32 *pFd, int udp_port )
+struct sockaddr_t Lan_CreateUDPBroadCastServer(int32 *pFd, int udp_port )
 {
     int udpbufsize=2;
     struct sockaddr_t addr;
+    memset(&addr,0,sizeof(addr));
 
-    if( *pFd == -1 )
+    if(INVALID_SOCKET == *pFd)
     {
-
         *pFd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
 
         if(*pFd < 0)
         {
             GAgent_Printf(GAGENT_DEBUG, "UDP BC socket create error,errno:%d", errno);
-            *pFd = -1;
-            return ;
+            *pFd = INVALID_SOCKET;
         }
 
         if(Gagent_setsocketnonblock(*pFd) != 0)
@@ -149,19 +81,16 @@ void Lan_CreateUDPBroadCastServer(int32 *pFd, int udp_port )
         if(setsockopt(*pFd, SOL_SOCKET, SO_BROADCAST, &udpbufsize,sizeof(int)) != 0)
         {
             GAgent_Printf(GAGENT_DEBUG,"UDP BC Server setsockopt error,errno:%d", errno);
-            //return;
         }
         if(bind(*pFd, (struct sockaddr *)&addr, sizeof(addr)) != 0)
         {
             GAgent_Printf(GAGENT_DEBUG,"UDP BC Server bind error,errno:%d", errno);
             close(*pFd);
-            *pFd = -1;
-            return;
+            *pFd = INVALID_SOCKET;
         }
-
     }
     GAgent_Printf(GAGENT_DEBUG,"UDP BC Server socketid:%d on port:%d", *pFd, udp_port);
-    return;
+    return addr;
 }
 
 void Lan_udpDataHandle(pgcontext pgc, ppacket prxBuf, ppacket ptxBuf, int len)
@@ -191,6 +120,7 @@ static void Lan_dispatchUdpData(pgcontext pgc, struct sockaddr_t *paddr,
     int32 packetLen;
     int32 bytesOfLen;
     int32 dataLen;
+    uint32 offsetPayload;
     uint16 cmd;
     int32 ret;
     uint8 *buf;
@@ -199,6 +129,9 @@ static void Lan_dispatchUdpData(pgcontext pgc, struct sockaddr_t *paddr,
     bytesOfLen = mqtt_num_rem_len_bytes(buf + 4);
     dataLen = mqtt_parse_rem_len(buf + 3);
 
+    /* head(4B) | len(xB) | flag(1B) | cmd(2B) | payload(xB) */
+    offsetPayload = LAN_PROTOCOL_HEAD_LEN + bytesOfLen + LAN_PROTOCOL_FLAG_LEN + 
+                            LAN_PROTOCOL_CMD_LEN;
     packetLen = LAN_PROTOCOL_HEAD_LEN + bytesOfLen + dataLen;
     
     if(packetLen != recLen)
@@ -216,8 +149,14 @@ static void Lan_dispatchUdpData(pgcontext pgc, struct sockaddr_t *paddr,
             LAN_onDiscoverAck(pgc, ptxBuf->phead, paddr);
             break;
         case GAGENT_LAN_CMD_ONBOARDING:
-            Lan_udpOnBoarding(pgc, ptxBuf->phead);
-            Socket_sendto(pgc->ls.udpServerFd, ptxBuf->phead, 8, paddr, sizeof(struct sockaddr_t));
+			if(RET_SUCCESS != Lan_udpOnBoarding(pgc, prxBuf->phead + offsetPayload))
+            {
+                GAgent_Printf(GAGENT_ERROR, "Invalid wifi_ssid or wifi_key  length");
+                break;
+            }
+			     
+		    LAN_onBoardingAck(pgc, ptxBuf->phead, paddr);
+            GAgent_DRVWiFi_StationCustomModeStart(pgc->gc.wifi_ssid, pgc->gc.wifi_key, WIFI_MODE_STATION);
             break;
 
         default:
@@ -225,21 +164,29 @@ static void Lan_dispatchUdpData(pgcontext pgc, struct sockaddr_t *paddr,
     }
 }
 
-static void Lan_udpOnBoarding(pgcontext pgc, u8 *buf)
+static int32 Lan_udpOnBoarding(pgcontext pgc, u8 *buf)
 {
-    unsigned char* passwdlength = NULL;
+    uint16 ssidlength;
+    uint16 passwdlength;
     
-    passwdlength = buf+(10+buf[9]+1);
-    
-    memset(pgc->gc.wifi_ssid,0, SSID_LEN);
-    memset(pgc->gc.wifi_key,0,WIFIKEY_LEN);
+    ssidlength = buf[1] | (buf[0] << 8);
+    passwdlength = buf[2+ssidlength+1] | (buf[2+ssidlength] << 8);
 
-    strncpy(pgc->gc.wifi_ssid, buf+10,buf[9]);
-    strncpy(pgc->gc.wifi_key,buf+(10+buf[9]+2),*passwdlength);
+    if(ssidlength > SSID_LEN_MAX || passwdlength > WIFIKEY_LEN_MAX)
+    {
+        GAgent_Printf(GAGENT_CRITICAL, "ssid(len:%d) or pwd(len:%d) invalid",
+                        ssidlength, passwdlength);
+        return RET_FAILED;
+    }
+
+    strncpy(pgc->gc.wifi_ssid, buf+2, ssidlength);
+    pgc->gc.wifi_ssid[ssidlength] = '\0';
+    strncpy(pgc->gc.wifi_key, buf+2+ssidlength+2, passwdlength);
+    pgc->gc.wifi_key[passwdlength] = '\0';
 
     GAgent_DevSaveConfigData(&(pgc->gc));
 
-    return ;
+    return RET_SUCCESS;
 }
 
 /****************************************************************
@@ -252,13 +199,48 @@ static void LAN_onDiscoverAck(pgcontext pgc, uint8 *ptxBuf, struct sockaddr_t *p
     int32 len;
     int32 ret;
 
-    Build_BroadCastPacket( pgc, 0, ptxBuf );
-    len = ptxBuf[4] + 5;
+    combination_broadcast_packet( pgc,ptxBuf,GAGENT_LAN_CMD_REPLY_BROADCAST );
+
+    len = ptxBuf[4] + LAN_PROTOCOL_HEAD_LEN + 1;
     ret = Socket_sendto(pgc->ls.udpServerFd, ptxBuf, len, paddr, sizeof(struct sockaddr_t));
     if(ret != len)
     {
         GAgent_Printf(GAGENT_ERROR,"send discover response fail,len:%d.ret:0x%x",
                         len, ret);
+    }
+}
+
+static void LAN_onBoardingAck(pgcontext pgc, uint8 *ptxBuf, struct sockaddr_t *paddr)
+
+{
+    int32 len;
+    uint32 dataLen;
+    uint32 offset;
+    int32 ret;
+    
+    /*  head(4B) */
+    offset = 0;
+    *(uint32 *)ptxBuf = htonl(GAGENT_PROTOCOL_VERSION);
+    offset += LAN_PROTOCOL_HEAD_LEN;
+    
+    /* datalen = flag(1B) + cmd(2B) */
+    dataLen = LAN_PROTOCOL_FLAG_LEN + LAN_PROTOCOL_CMD_LEN;
+    ptxBuf[offset] = dataLen;
+    offset += 1;
+    
+    /* flag */
+    ptxBuf[offset] = 0x00;
+    offset += LAN_PROTOCOL_FLAG_LEN;
+    
+    /* cmd */
+    *(uint16 *)(ptxBuf + offset) = htons(GAGENT_LAN_CMD_REPLY_ONBOARDING);
+    offset += LAN_PROTOCOL_CMD_LEN;
+	
+    len = offset;
+    ret = Socket_sendto(pgc->ls.udpServerFd, ptxBuf, len, paddr, sizeof(struct sockaddr_t));
+    if(ret != len)
+    {
+        GAgent_Printf(GAGENT_ERROR,"send onboarding response fail,len:%d.ret:0x%x",len, ret);
     }
 }
 

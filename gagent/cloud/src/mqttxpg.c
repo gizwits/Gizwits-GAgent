@@ -1,6 +1,6 @@
 #include "gagent.h"
 #include "mqttxpg.h"
-#include "MqttSTM.h"
+#include "mqttbase.h"
 #include "mqttxpg.h"
 #include "mqttlib.h"
 #include "cloud.h"
@@ -135,11 +135,6 @@ int32 Mqtt_SubLoginTopic( mqtt_broker_handle_t *LoginBroker,pgcontext pgc,int16 
             GAgent_Printf(GAGENT_INFO,"MQTT_STATUS_LOGINTOPIC3");
         }
         break;
-        /*
-    case MQTT_STATUS_LOGINTOPIC3:
-        Mqtt_IntoRunning();
-        break;
-        */
     default:
         break;
     }
@@ -320,11 +315,42 @@ void Mqtt_ResOnlineClient( pgcontext pgc,char *buf,int32 buflen)
 {
     u16 *pWanclient_num;
     u16 wanclient_num=0;
-  
+    u16 lanclient_num=0;
+
     pWanclient_num = (u16*)&buf[6];
     wanclient_num = ntohs( *pWanclient_num );
     pgc->rtinfo.waninfo.wanclient_num = wanclient_num;
+    lanclient_num = pgc->ls.tcpClientNums;
+
+    if( 0 != wanclient_num)
+    {
+        GAgent_SetWiFiStatus( pgc,WIFI_CLIENT_ON,1 );
+    }
+    else if(0 == (wanclient_num + lanclient_num))
+    {
+        GAgent_SetWiFiStatus( pgc,WIFI_CLIENT_ON,0 );
+    }
+
     GAgent_Printf(GAGENT_INFO,"wanclient_num = %d",wanclient_num );
+    return ;
+}
+void Mqtt_Ack2Cloud( uint8 *pPhoneClient,uint8* szDID,uint8 *pData,uint32 datalen )
+{
+    uint8 msgtopic[60]={0};
+    int8 pos=0;
+    memcpy( msgtopic+pos,"dev2app/",strlen("dev2app/"));
+    pos+=strlen( "dev2app/" );
+    memcpy( msgtopic+pos,szDID,strlen(szDID) );
+    pos+=strlen(szDID);
+    msgtopic[pos] = '/';
+    pos++;
+    memcpy( msgtopic+pos,pPhoneClient,strlen(pPhoneClient));
+    pos+=strlen( pPhoneClient );
+    msgtopic[pos] = '\0';
+    GAgent_Printf( GAGENT_DEBUG,"msgtopic:%s  :len=%d",msgtopic,strlen(msgtopic) );
+
+    //TODO ack buf.
+    PubMsg( &g_stMQTTBroker,msgtopic,pData,datalen,0 );
     return ;
 }
 int32 Mqtt_DispatchPublishPacket( pgcontext pgc,u8 *packetBuffer,int32 packetLen )
@@ -334,7 +360,8 @@ int32 Mqtt_DispatchPublishPacket( pgcontext pgc,u8 *packetBuffer,int32 packetLen
     u8 *pHiP0Data;
     int32 HiP0DataLen;
     int32 i;
-    u8  clientid[32];
+    u8 varlen=0;
+    u8  clientid[PHONECLIENTID + 1];
     //int32 clientidlen = 0;
     u8 *pTemp;
     u8  DIDBuffer[32];
@@ -342,15 +369,19 @@ int32 Mqtt_DispatchPublishPacket( pgcontext pgc,u8 *packetBuffer,int32 packetLen
     u16 *pcmd=NULL;
 
     topiclen = mqtt_parse_pub_topic(packetBuffer, topic);
-    HiP0DataLen = packetLen - topiclen;
+    //HiP0DataLen = packetLen - topiclen;
     topic[topiclen] = '\0';
 
-     HiP0DataLen = mqtt_parse_publish_msg(packetBuffer, &pHiP0Data); 
-     pcmd = (u16*)&pHiP0Data[4];
-     cmd = ntohs( *pcmd );
+    HiP0DataLen = mqtt_parse_publish_msg(packetBuffer, &pHiP0Data); 
+
 
     if(strncmp(topic,"app2dev/",strlen("app2dev/"))==0)
     {
+    
+        varlen = mqtt_num_rem_len_bytes( pHiP0Data+3 );
+
+        pcmd = (u16*)&pHiP0Data[4+varlen+1];
+        cmd = ntohs( *pcmd );  
         pTemp = &topic[strlen("app2dev/")];
         i = 0;
         while (*pTemp != '/')
@@ -363,20 +394,42 @@ int32 Mqtt_DispatchPublishPacket( pgcontext pgc,u8 *packetBuffer,int32 packetLen
 
         pTemp ++; /* 跳过\/ */
         i=0;
-        while (*pTemp != '\0')
+        while (*pTemp != '\0' && i <= PHONECLIENTID)
         {
             clientid[i] = *pTemp;
             i++;
             pTemp++;
         }
+        if(i > PHONECLIENTID)
+        {
+            /* should handle invalid phone client id.don't ack the cmd */
+            i = PHONECLIENTID;
+        }
         clientid[i]= '\0';
         strcpy( pgc->rtinfo.waninfo.phoneClientId ,clientid );
         memcpy( packetBuffer,pHiP0Data,HiP0DataLen );
+        GAgent_Printf( GAGENT_INFO,"Cloud CMD =%04X",cmd );
+        if( cmd==0x0093 )
+        {
+            uint8 tempCmd[2];
+            tempCmd[0] = pHiP0Data[4+varlen+1];
+            tempCmd[1] = pHiP0Data[4+varlen+1+1];
+            pHiP0Data[4+varlen+1]=0x00;
+            pHiP0Data[4+varlen+1+1]=0x94;
+            //ack to cloud
+            Mqtt_Ack2Cloud( pgc->rtinfo.waninfo.phoneClientId,pgc->gc.DID,pHiP0Data,HiP0DataLen );
+
+            pHiP0Data[4+varlen+1] = tempCmd[0];
+            pHiP0Data[4+varlen+1+1] = tempCmd[1];
+        }
         return HiP0DataLen;
     }
     // 订阅最新固件响应
     else if(strncmp(topic,"ser2cli_res/",strlen("ser2cli_res/"))==0)
     {
+
+        pcmd = (u16*)&pHiP0Data[4];
+        cmd = ntohs( *pcmd );        
         // pHiP0Data消息体的指针
         // HiP0DataLen消息体的长度 packetBuffer
         switch(cmd)
@@ -394,157 +447,4 @@ int32 Mqtt_DispatchPublishPacket( pgcontext pgc,u8 *packetBuffer,int32 packetLen
         return 0;
     }
     return 0;
-}
-u8 *g_MQTTBuffer;
-#define MQTT_SOCKET_BUFFER_LEN 2048
-
-
-void MQTT_handlePacket()
-{
-//    int32 packetLen = 0;
-//    u8 packettype=0;    
-//    char tmp[100];
-//    int32 Recmsg_id;
-//    int32 ret;
-
-//    if( g_MqttCloudSocketID == -1)
-//    {
-//        return;
-//    }
-//    memset(g_MQTTBuffer, 0x0, MQTT_SOCKET_BUFFER_LEN);
-//    packetLen = MQTT_readPacket(g_MQTTBuffer,MQTT_SOCKET_BUFFER_LEN);	         
-//    if(packetLen>0) 
-//    {
-//        packettype = MQTTParseMessageType(g_MQTTBuffer);
-//        if ( packettype != MQTT_MSG_PINGRESP)
-//        {
-//            GAgent_Printf(GAGENT_INFO,"MQTT PacketType:%08x[g_MQTTStatus:%08x]", 
-//                          packettype, g_MQTTStatus);
-//        }
-//        else
-//        {
-//            GAgent_Printf(GAGENT_INFO,"MQTT Ping ack.");
-//        }
-//        switch(packettype)
-//        {
-//        case MQTT_MSG_PINGRESP:
-//            g_pingpacketack=0;
-//            break;
-//                
-//        case MQTT_MSG_CONNACK:                          
-//            if( g_MQTTStatus==MQTT_STATUS_REGISTERT )
-//            {
-//                Mqtt_DoRegister( &g_stMQTTBroker,g_MQTTBuffer,packetLen);
-//            }
-//            if( g_MQTTStatus==MQTT_STATUS_LOGIN )
-//            {
-//                Mqtt_DoLogin( &g_stMQTTBroker,g_MQTTBuffer,packetLen );
-//            }
-//            break;
-//        case MQTT_MSG_SUBACK:
-//        {
-//            Recmsg_id = mqtt_parse_msg_id(g_MQTTBuffer);
-//             
-//            if(g_Msgsub_id == Recmsg_id)
-//            {
-//                if(g_MQTTStatus==MQTT_STATUS_REGISTERTTOPIC)
-//                {
-//                    Mqtt_DoRegister( &g_stMQTTBroker,g_MQTTBuffer,packetLen);
-//                    break;
-//                }
-//                Mqtt_SubLoginTopic(&g_stMQTTBroker);
-//            }
-//            break;
-//        }
-//        case MQTT_MSG_PUBLISH:
-//        {                    
-//            if(g_MQTTStatus==MQTT_STATUS_REGISTERTPUB)
-//            {
-//                if(0 == Mqtt_DealRegisterAckPacket(&g_stMQTTBroker,g_MQTTBuffer,packetLen))
-//                {                            
-//                    GAgent_Printf(GAGENT_INFO,"Receive DId is:%s\r\n",g_stMQTTBroker.clientid);
-//                }                        
-//                break;
-//            }
-
-//            if(g_MQTTStatus==MQTT_STATUS_RUNNING)
-//            {
-//                ret = Mqtt_DispatchPublishPacket(&g_stMQTTBroker,g_MQTTBuffer,packetLen);
-//                if (ret != 0)
-//                {
-//                    GAgent_Printf(GAGENT_WARNING,"Mqtt_DispatchPublishPacket return:%d ",ret);
-//                }
-//                break;                               
-//            }
-//            else
-//            {
-//                GAgent_Printf(GAGENT_WARNING,"Receive MQTT_MSG_PUBLISH packet but MQTTStatus is:%d ",g_MQTTStatus);
-//            }
-//            break ;
-//        }
-//        default:
-//            GAgent_Printf(GAGENT_INFO, "MQTTStatus is:%d , Invalid packet type:%08x",g_MQTTStatus, packettype);
-//            break;
-//        }
-//    }
-
-//#if (GAGENT_FEATURE_OTA == 1)
-//#if(GAGENT_WITH_MXCHIP == 1)
-//    if( packetLen==-3&&(g_MQTTStatus==MQTT_STATUS_RUNNING) )
-//    {
-//        int32 topiclen;
-//        int32 VARLEN;
-//        int32 mqttHeadLen; 
-
-//        u8 Mtopic[100]={0};
-//            
-//        GAgent_Printf(GAGENT_INFO, "OTA MQTTStatus is:%d ",g_MQTTStatus);     
-//            
-//        VARLEN = mqtt_num_rem_len_bytes(g_MQTTBuffer);
-//        topiclen = mqtt_parse_pub_topic(g_MQTTBuffer, Mtopic);                                 
-//            
-//        mqttHeadLen = 1+VARLEN+2+topiclen;
-//        packettype = MQTTParseMessageType(g_MQTTBuffer);
-//                        
-//        GAgent_Printf(GAGENT_INFO,"topic:%s\r\n",Mtopic);            
-//        if( packettype == MQTT_MSG_PUBLISH )
-//        {            
-//            if(strncmp(Mtopic,"ser2cli_res/",strlen("ser2cli_res/"))==0)
-//            {
-//                // SOCKET_RECBUFFER_LEN 为接收到的数据长度
-//                DRV_OTAPacketHandle_V3(g_MQTTBuffer+mqttHeadLen, MQTT_SOCKET_BUFFER_LEN-mqttHeadLen, g_MqttCloudSocketID);
-//            }
-//        }               
-//    }
-//#endif
-//#endif
-    return;
-}
-
-void MQTT_Init(void)
-{
-    g_MQTTBuffer = (u8*)malloc(MQTT_SOCKET_BUFFER_LEN);
-    while(g_MQTTBuffer == NULL)
-    {
-        GAgent_Printf(GAGENT_DEBUG, "Malloc MQTT Buffer failed.");
-        msleep(1000);
-    }
-    return;
-}
-
-void MQTT_thread(void)
-{
-    GAgent_Printf(GAGENT_DEBUG, "Starting MQTT thread");
-
-    while(1)
-    {
-        if(!(NULL == g_MQTTBuffer))
-        {
-            memset(g_MQTTBuffer, 0x0, MQTT_SOCKET_BUFFER_LEN);
-            MQTT_handlePacket();
-        }
-
-        msleep(50);
-    }
-    return;
 }

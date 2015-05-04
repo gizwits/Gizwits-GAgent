@@ -4,22 +4,19 @@
 *   buf     :   wifi 2 mcu buf.
 *   bufLen  :   wifi 2 mcu bufLen
 *   pRxbuf  :   data from local.
+*   Time    :   current time ms
 *   return  :   0 check success   1 check fail
-*       add by alex lin 2014-09-02
-*   
+*   Add by alex lin 2014-09-02
 *******************************************************************/
 int GAgent_CheckAck( int fd, pgcontext pgc,unsigned char *buf,int bufLen,ppacket pRxbuf,u32 time )
 {
     int i=0;
     int PacketLen=0;
-    int resend_time=0;
+    int resend_time=1;
     unsigned char checksum=0;
     uint8 *phead =NULL;
     int sum=0;
     int8 cmd =0;
-// ff ff 00 06 03 00 00 00 02 0b
-// ff ff 00 06 03 01 00 00 02 0c
-// ff ff 00 06 03 03 00 00 02 0e
     while(1)
     {
         GAgent_SelectFd( pgc,0,1000 );
@@ -51,6 +48,7 @@ int GAgent_CheckAck( int fd, pgcontext pgc,unsigned char *buf,int bufLen,ppacket
                 }
                 else
                 {
+                    // TODO 
                     GAgent_Printf(GAGENT_INFO, "Get ACK failed, checksum info: %d:%d %d", 
                             checksum, phead[PacketLen-1], PacketLen);
                 
@@ -81,6 +79,6 @@ int GAgent_CheckAck( int fd, pgcontext pgc,unsigned char *buf,int bufLen,ppacket
             Local_SendData( fd,buf,bufLen );
             resend_time += 1;            
         }
-        msleep(10);
+        //msleep(10);
     }
 }

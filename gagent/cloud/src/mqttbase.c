@@ -1,10 +1,6 @@
 #include "gagent.h"
-//#include "lib.h"
-#include "MqttSTM.h"
+#include "mqttbase.h"
 #include "mqttlib.h"
-//#include "wifi.h"
-
-//int g_MqttCloudSocketID = -1;
 
 int send_packet(int socketid, const void* buf, unsigned int count)
 {
@@ -13,77 +9,6 @@ int send_packet(int socketid, const void* buf, unsigned int count)
     GAgent_Printf(GAGENT_INFO,"MQTT Send packet length=%d",ret );
     return ret;
 }
-/******************************************************************
- *       function    :   Cloud_MQTT_initSocket
- *       broker      :   mqtt struct
- *       flag        :   0 wifi module to register socketid.
- *                       1 wifi module to login socketid
- *
- *
- ********************************************************************/
-//int Cloud_MQTT_initSocket( mqtt_broker_handle_t* broker,int flag )
-//{
-//    int ret;
-//    int MTflag;
-//    struct sockaddr_t Msocket_address;
-//    char MqttServerIpAddr[32];
-//    int iSocketId;
-//    int packetLen;
-
-//#ifdef GAGENT_V4PROTOCOL
-//    char *domain = g_Xpg_GlobalVar.m2m_SERVER;
-//    unsigned short port = g_Xpg_GlobalVar.m2m_Port;
-//#endif
-//    memset(MqttServerIpAddr, 0x0, sizeof(MqttServerIpAddr));
-
-//    if(strlen(g_stGAgentConfigData.m2m_ip) < 1)
-//    {
-//        GAgent_Printf(GAGENT_INFO,"g_stGAgentConfigData.m2m_ip is NULL");
-//        return -1;
-//    }
-//    GAgent_Printf(GAGENT_INFO,"connect to m2m, ip : %s",g_stGAgentConfigData.m2m_ip);
-//    strcpy(MqttServerIpAddr, g_stGAgentConfigData.m2m_ip);
-//#ifdef GAGENT_WITH_HF
-//#ifdef GAGENT_V3PROTOCOL
-//    GAgent_DOFirstWifiup();
-//#endif
-//#endif
-//    GAgent_Printf(GAGENT_INFO,"MQTT Connect Domain:%s IP:%s \r\n", domain, MqttServerIpAddr);
-
-//    if( g_MqttCloudSocketID!=-1 )
-//    {
-//        GAgent_Printf(GAGENT_INFO,"Cloud_MQTT_initSocket close[%04x] mqtt socket", g_MqttCloudSocketID);
-//        close_socket(broker);
-//    }
-
-//    if( (iSocketId = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP))<0)
-//    {
-//        GAgent_Printf(GAGENT_ERROR," MQTT socket init fail");
-//        return 1;
-//    }
-//#if(GAGENT_WITH_HF == 1)
-//    set_socknoblk(iSocketId);
-//#endif
-//    ret = connect_mqtt_socket(iSocketId, &Msocket_address, port, MqttServerIpAddr);
-//    if (ret < 0)
-//    {
-//        GAgent_Printf(GAGENT_WARNING,"mqtt socket connect fail with:%d", ret);
-//        close(iSocketId);
-//        return 3;
-//    }
-//    /* For Test MQTT Read And Write Func */
-//    //MQTT_handlePacket();
-
-//    GAgent_Printf(GAGENT_INFO, "Created mqtt socketid[%08x]", iSocketId);
-//    g_MqttCloudSocketID = iSocketId;
-
-//    /* MQTT stuffs */
-//    mqtt_set_alive(broker, MQTT_SET_ALIVE);
-//    broker->socketid = iSocketId;
-//    broker->mqttsend = send_packet;
-
-//    return 0;
-//}
 
 /*************************************************
  *

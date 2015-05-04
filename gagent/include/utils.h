@@ -4,7 +4,7 @@
 
 //int8* GAgent_strstr(const int8 *s1, const int8 *s2);
 void make_rand(int8* data );
-varc Tran2varc(short remainLen);
+varc Tran2varc(uint32 remainLen);
 void resetPacket( ppacket pbuf );
 void copyPacket( ppacket src,ppacket dest );
 uint32 ParsePacket( ppacket pbuf );
