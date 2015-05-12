@@ -3,7 +3,7 @@
 
 int32 handleWebConfig( pgcontext pgc,int32 fd)
 {
-    int32     read_len;
+    int32   read_len;
     int8    *buf_head, *buf_body, *index_ssid, *index_pass, *p;
     pgconfig pConfigData=NULL;
     pConfigData = &(pgc->gc);
@@ -33,7 +33,8 @@ int32 handleWebConfig( pgcontext pgc,int32 fd)
     
     memset(buf_body, 0, 1024);
 
-    if( strstr(buf_head, "web_config.cgi") == NULL){
+    if( strstr(buf_head, "web_config.cgi") == NULL)
+    {
         snprintf(buf_body, 1024, "%s", "<html><body><form action=\"web_config.cgi\" method=\"get\">"
                  "<div align=\"center\" style=\"font-size:30px; padding-top:100px;\">"
                  "<p>[0~9],[a~z],[A~Z],[-],[_],[.]</p>"
@@ -53,7 +54,8 @@ int32 handleWebConfig( pgcontext pgc,int32 fd)
         send(fd, buf_head, strlen(buf_head), 0);
         send(fd, buf_body, strlen(buf_body), 0);
     }
-    else{
+    else
+    {
         //GET /web_config.cgi?fname=chensf&lname=pinelinda HTTP/1.1
         index_ssid = strstr(buf_head, "ssid=");
         index_pass = strstr(buf_head, "pass=");
@@ -137,15 +139,15 @@ void GAgent_DoTcpWebConfig( pgcontext pgc )
         if( pgc->ls.tcpWebConfigFd>0 )
         {
             close( pgc->ls.tcpWebConfigFd );
-            pgc->ls.tcpWebConfigFd = -1;
+            pgc->ls.tcpWebConfigFd = INVALID_SOCKET;
         }
         return ;
     }
 
     if( pgc->ls.tcpWebConfigFd <= 0 )
     {
-     GAgent_Printf( GAGENT_DEBUG,"Creat Tcp Web Server." );
-     pgc->ls.tcpWebConfigFd = GAgent_CreateWebConfigServer( 80 );   
+        GAgent_Printf( GAGENT_DEBUG,"Creat Tcp Web Server." );
+        pgc->ls.tcpWebConfigFd = GAgent_CreateWebConfigServer( 80 );   
     }
 
     if(FD_ISSET(pgc->ls.tcpWebConfigFd, &(pgc->rtinfo.readfd)))
@@ -156,7 +158,6 @@ void GAgent_DoTcpWebConfig( pgcontext pgc )
         {
             Lan_AddTcpNewClient(pgc, newfd, &addr);
         }
-
     }
 
     for(i = 0;i < LAN_TCPCLIENT_MAX; i++)
@@ -170,8 +171,8 @@ void GAgent_DoTcpWebConfig( pgcontext pgc )
             Lan_setClientTimeOut(pgc, i);
             handleWebConfig( pgc,fd);
             close(fd);
-            fd = -1;
-            pgc->ls.tcpClient[i].fd=-1;
+            fd = INVALID_SOCKET;
+            pgc->ls.tcpClient[i].fd=INVALID_SOCKET;
         }
     }
 }

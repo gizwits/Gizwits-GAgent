@@ -26,7 +26,10 @@ int8 GAgent_DRVGetWiFiStartMode( pgcontext pgc );
 int8 GAgent_DRVSetWiFiStartMode( pgcontext pgc,uint32 mode );
 int16 GAgent_DRV_WiFi_SoftAPModeStart( const int8* ap_name,const int8 *ap_password,int16 wifiStatus );
 int16 GAgent_DRVWiFi_StationCustomModeStart(int8 *StaSsid,int8 *StaPass,uint16 wifiStatus );
-
+int16 GAgent_DRVWiFi_StationDisconnect();
+void GAgent_DRVWiFiStartScan( );
+void GAgent_DRVWiFiStopScan( );
+NetHostList_str *GAgentDRVWiFiScanResult( NetHostList_str *aplist );
 /*********Net socket function************/
 uint32 GAgent_GetHostByName( int8 *domain, int8 *IPAddress );
 int32  GAgent_accept( int32 sockfd );

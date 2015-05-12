@@ -16,6 +16,10 @@ extern pgcontext pgContextData;
   #define HTTP_SERVER         "api.iotsdk.com"
 #endif
 
+#define GAGENT_TEST_AP1        "GIZWITS_TEST_1"
+#define GAGENT_TEST_AP2        "GIZWITS_TEST_2"
+#define GAGENT_TEST_AP_PASS    "GIZWITS_TEST_PASS" 
+
 /*For GAgent Defined SoftAP*/
 #define AP_NAME             "XPG-GAgent-"
 #define AP_PASSWORD         "123456789"
@@ -59,10 +63,10 @@ extern pgcontext pgContextData;
 #define CLOUD_INIT                 1
 #define CLOUD_REQ_GET_DID          2
 #define CLOUD_RES_GET_DID          3
-#define CLOUD_REQ_GET_TARGET_FID   4
-#define CLOUD_RES_GET_TARGET_FID   5
-#define CLOUD_REQ_PROVISION        6
-#define CLOUD_RES_PROVISION        7
+#define CLOUD_REQ_PROVISION        4
+#define CLOUD_RES_PROVISION        5
+#define CLOUD_REQ_GET_TARGET_FID   6
+#define CLOUD_RES_GET_TARGET_FID   7
 #define CLOUD_REQ_OTA              8
 #define CLOUD_RES_OTA              9
 
@@ -146,6 +150,9 @@ extern pgcontext pgContextData;
 #define WIFI_STATUS2MCU     0X0D
 #define WIFI_STATUS2MCU_ACK 0X0E
 
+#define MCU_DATA_ILLEGAL    0x11
+#define MCU_REPLY_GAGENT_DATA_ILLEGAL    0x12
+
 #define WIFI_TEST           0x13
 #define WIFI_TEST_ACK       0x14
 
@@ -155,6 +162,8 @@ extern pgcontext pgContextData;
 #define MCU_LEN_POS            2
 #define MCU_CMD_POS            4
 #define MCU_SN_POS             5
+#define MCU_FLAG_POS           6
+#define MCU_ERROR_POS          8
 #define MCU_HDR_LEN            8
 #define MCU_LEN_NO_PAYLOAD     9
 #define MCU_HDR_FF             0xFF
@@ -213,6 +222,10 @@ void GAgent_UpdateInfo( pgcontext pgc,int8 *new_pk );
 void  GAgent_AddSelectFD( pgcontext pgc );
 int32 GAgent_MaxFd( pgcontext pgc ) ;
 int8 GAgent_loglevelenable( uint16 level );
+void GAgentSetLedStatus( uint16 gagentWiFiStatus );
+
+uint8 GAgent_EnterTest( pgcontext pgc );
+uint8 GAgent_ExitTest( pgcontext pgc );
 
 uint32 GAgent_BaseTick();
 void GAgent_Tick( pgcontext pgc );

@@ -255,7 +255,7 @@ uint32 ParsePacket( ppacket pRxBuf )
         pRxBuf->type = SetPacketType( pRxBuf->type,CLOUD_DATA_IN,0 );
         pRxBuf->type = SetPacketType( pRxBuf->type,LOCAL_DATA_OUT,1 );
         GAgent_Printf( GAGENT_DEBUG," Set Data Type : %04X - LOCAL_DATA_OUT", pRxBuf->type );
-   }
+    }
     else if( ((pRxBuf->type)&(LOCAL_DATA_IN)) == LOCAL_DATA_IN )
     {
         /* head(0xffff)| len(2B) | cmd(1B) | sn(1B) | flag(2B) |  payload(xB) | checksum(1B) */

@@ -8,8 +8,8 @@
 ****************************************************************/
 void Lan_setClientTimeOut(pgcontext pgc, int32 channel)
 {
-     uint16 GAgentStatus=0;
-     GAgentStatus = pgc->rtinfo.GAgentStatus;
+    uint16 GAgentStatus=0;
+    GAgentStatus = pgc->rtinfo.GAgentStatus;
     if( (GAgentStatus&WIFI_MODE_AP)== WIFI_MODE_AP )
     {
         pgc->ls.tcpClient[channel].timeout = LAN_CLIENT_MAXLIVETIME*5;
@@ -31,7 +31,7 @@ int32 Lan_AddTcpNewClient(pgcontext pgc, int fd, struct sockaddr_t *addr)
 
     for(i = 0; i < LAN_TCPCLIENT_MAX; i++)
     {
-        if(pgc->ls.tcpClient[i].fd == -1)
+        if(pgc->ls.tcpClient[i].fd == INVALID_SOCKET)
         {
             pgc->ls.tcpClient[i].fd = fd;
             Lan_setClientTimeOut(pgc, i);
@@ -48,7 +48,7 @@ int32 Lan_AddTcpNewClient(pgcontext pgc, int fd, struct sockaddr_t *addr)
 
 /****************************************************************
         FunctionName        :   Lan_TcpServerHandler.
-        Description         :      Lan handing new tcp client.
+        Description         :   Lan handing new tcp client.
         Add by Will.zhou     --2015-03-10
 ****************************************************************/
 int32 Lan_TcpServerHandler(pgcontext pgc)
@@ -132,13 +132,13 @@ static uint32 Lan_checkAuthorization( pgcontext pgc,  int clientIndex)
 {
   
     if((LAN_CLIENT_LOGIN_FAIL == pgc->ls.tcpClient[clientIndex].isLogin)
-        &&(-1 != pgc->ls.tcpClient[clientIndex].fd))
+        &&(INVALID_SOCKET != pgc->ls.tcpClient[clientIndex].fd))
     {
         close(pgc->ls.tcpClient[clientIndex].fd);
-        pgc->ls.tcpClient[clientIndex].fd = -1;
+        pgc->ls.tcpClient[clientIndex].fd = INVALID_SOCKET;
 
         GAgent_Printf(GAGENT_INFO, "Illegal tcp client login!!! clientid[%d] ",clientIndex);
-         return 0;
+            return 0;
      }
      
     return 1;
@@ -213,7 +213,7 @@ static void Lan_handleLogin( pgcontext pgc, ppacket src, ppacket dest, int clien
 
 /****************************************************************
         FunctionName        :   Lan_handlePasscode.
-        Description         :      reponsing passcode to client for Binding.
+        Description         :   reponsing passcode to client for Binding.
         Add by Will.zhou     --2015-03-10
 ****************************************************************/
 static void Lan_handlePasscode( pgcontext pgc, ppacket src, int clientIndex)
@@ -269,7 +269,7 @@ static void Lan_handlePasscode( pgcontext pgc, ppacket src, int clientIndex)
 		ret = send(fd, pbuf, 10, 0);
         GAgent_Printf(GAGENT_ERROR,"timeout,client[%d]cannot bind,close socket", fd);
 		close(fd);
-		pgc->ls.tcpClient[clientIndex].fd = -1;
+		pgc->ls.tcpClient[clientIndex].fd = INVALID_SOCKET;
 	}
 
     return;
@@ -388,10 +388,34 @@ static void Lan_AckHeartbeak( pgcontext pgc, ppacket src, int clientIndex )
 
     send( fd, pbuf, 8, 0);
 }
-
+/****************************************************************
+        FunctionName        :   Local_Ack2TcpClient.
+        Description         :   Gagent response test ack to tcp client
+        Add by Frank Liu        --2015-05-05
+****************************************************************/
+void Local_Ack2TcpClient(pgcontext pgc, uint32 channel)
+{
+    int8 tmpBuf[8] = {0,};
+    int8 flag = 0;
+    int16 cmdWord = GAGENT_LAN_REPLY_TEST;
+    memset(tmpBuf,0,sizeof(tmpBuf));
+    
+    if(pgc->ls.tcpClient[channel].fd > 0)
+    {
+        //protocolver
+        *(uint32 *)tmpBuf = htonl(GAGENT_PROTOCOL_VERSION);
+        tmpBuf[4] = sizeof(flag) + sizeof(cmdWord);
+        //flag
+        tmpBuf[5] = 0x00;
+        //cmdword
+        *(uint16 *)(tmpBuf + 6) = htons(cmdWord);
+        
+        send( pgc->ls.tcpClient[channel].fd,tmpBuf,sizeof(tmpBuf),0 );
+    }
+}
 /****************************************************************
         FunctionName        :   Lan_dispatchTCPData.
-        Description         :      parse and dispatch tcp cmd message.
+        Description         :   parse and dispatch tcp cmd message.
         Add by Will.zhou     --2015-03-10
 ****************************************************************/
 int32 Lan_dispatchTCPData(pgcontext pgc, ppacket prxBuf, ppacket ptxBuf, int32 clientIndex)
@@ -408,57 +432,56 @@ int32 Lan_dispatchTCPData(pgcontext pgc, ppacket prxBuf, ppacket ptxBuf, int32 c
     cmd = *(uint16 *)(prxBuf->phead + LAN_PROTOCOL_HEAD_LEN + LAN_PROTOCOL_FLAG_LEN
                         + bytesOfLen);
     cmd = ntohs(cmd);
-
     prxBuf->type = SetPacketType( prxBuf->type,LAN_TCP_DATA_IN,1 );
     ret = ParsePacket(prxBuf);
-
+    
     if((cmd != GAGENT_LAN_CMD_BINDING) && (cmd != GAGENT_LAN_CMD_LOGIN)
 		&& (cmd != GAGENT_LAN_CMD_INFO))
     {
         ret = Lan_checkAuthorization(pgc, clientIndex);
         if(0 == ret)
+        {
             return ret;
+        }
     }
-
     ret = 0;
     switch (cmd)
     {
-    case GAGENT_LAN_CMD_BINDING :
-        Lan_handlePasscode(pgc, ptxBuf, clientIndex);
-        break;
-    case GAGENT_LAN_CMD_LOGIN:
-        Lan_handleLogin(pgc, prxBuf, ptxBuf, clientIndex);
-        break;
-    case GAGENT_LAN_CMD_TRANSMIT:
-        prxBuf->type = SetPacketType( prxBuf->type, LAN_TCP_DATA_IN, 0 );
-        prxBuf->type = SetPacketType( ptxBuf->type, LOCAL_DATA_OUT, 1 );
-        if((prxBuf->pend - prxBuf->ppayload) > 0)
-           ret = prxBuf->pend - prxBuf->ppayload;
-        else
-           ret = 0;
-        break;
-    case GAGENT_LAN_CMD_HOSTPOTS:
-        /* 
-        Lan_GetWifiHotspots();
-        */
-        break;
-    case GAGENT_LAN_CMD_LOG:
-        break;
-    case GAGENT_LAN_CMD_INFO:
-		resetPacket(ptxBuf);
-		GAgent_Lan_SendDevInfo(pgc, ptxBuf, clientIndex);
-        break;
-    case GAGENT_LAN_CMD_TICK:
-        GAgent_Printf(GAGENT_WARNING,"LAN TCP heartbeat...");
-        Lan_AckHeartbeak(pgc, ptxBuf, clientIndex);
-        break;
-    case GAGENT_LAN_CMD_TEST:
-        /*
-        Lan_AckExitTestMode();
-        */
-        break;
-    default:
-        break;
+        case GAGENT_LAN_CMD_BINDING:
+            Lan_handlePasscode(pgc, ptxBuf, clientIndex);
+            break;
+        case GAGENT_LAN_CMD_LOGIN:
+            Lan_handleLogin(pgc, prxBuf, ptxBuf, clientIndex);
+            break;
+        case GAGENT_LAN_CMD_TRANSMIT:
+            prxBuf->type = SetPacketType( prxBuf->type, LAN_TCP_DATA_IN, 0 );
+            prxBuf->type = SetPacketType( ptxBuf->type, LOCAL_DATA_OUT, 1 );
+            if((prxBuf->pend - prxBuf->ppayload) > 0)
+               ret = prxBuf->pend - prxBuf->ppayload;
+            else
+               ret = 0;
+            break;
+        case GAGENT_LAN_CMD_HOSTPOTS:
+            /* 
+            Lan_GetWifiHotspots();
+            */
+            break;
+        case GAGENT_LAN_CMD_LOG:
+            break;
+        case GAGENT_LAN_CMD_INFO:
+    		resetPacket(ptxBuf);
+    		GAgent_Lan_SendDevInfo(pgc, ptxBuf, clientIndex);
+            break;
+        case GAGENT_LAN_CMD_TICK:
+            GAgent_Printf(GAGENT_WARNING,"LAN TCP heartbeat...");
+            Lan_AckHeartbeak(pgc, ptxBuf, clientIndex);
+            break;
+        case GAGENT_LAN_CMD_TEST:
+            Local_Ack2TcpClient( pgc,clientIndex);
+            GAgent_ExitTest( pgc );          
+            break;
+        default:
+            break;
     }
     return ret;
 }
@@ -488,54 +511,8 @@ int32 LAN_tcpClientInit(pgcontext pgc)
         Description         :      create tcp server.
         Add by Will.zhou     --2015-03-10
 ****************************************************************/
-void Lan_CreateTCPServer(int32 *pFd, int32 tcp_port)
+void Lan_CreateTCPServer(int32 *pFd, uint16 tcp_port)
 {
-    int bufferSize;
-    struct sockaddr_t addr;
-
-    if (*pFd == -1)
-    {
-        *pFd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-       
-        if(*pFd < 0)
-        {
-            GAgent_Printf(GAGENT_ERROR, "Create TCPServer failed!");
-            *pFd = -1;
-            return;
-        }
-        if(Gagent_setsocketnonblock(*pFd) != 0)
-        {
-            GAgent_Printf(GAGENT_ERROR,"TCP Server Gagent_setsocketnonblock fail.");
-        }
-
-        bufferSize = SOCKET_TCPSOCKET_BUFFERSIZE;
-        setsockopt(*pFd, SOL_SOCKET, SO_RCVBUF, &bufferSize, 4);
-        setsockopt(*pFd, SOL_SOCKET,SO_SNDBUF, &bufferSize, 4);
-        
-
-        memset(&addr, 0x0, sizeof(addr));
-        addr.sin_family = AF_INET;
-        addr.sin_port=htons(tcp_port);
-        addr.sin_addr.s_addr=INADDR_ANY;
-        if(bind(*pFd, (struct sockaddr *)&addr, sizeof(addr)) != 0)
-        {
-            GAgent_Printf(GAGENT_ERROR, "TCPSrever socket bind error");
-            close(*pFd);
-            *pFd = -1;
-            return;
-        }
-
-        if(listen(*pFd, LAN_TCPCLIENT_MAX) != 0)
-        {
-            GAgent_Printf(GAGENT_ERROR, "TCPServer socket listen error,errno:%d", errno);
-            close(*pFd);
-            *pFd = -1;
-            return;
-        }
-
-    }
-
-    GAgent_Printf(GAGENT_DEBUG,"TCP Server socketid:%d on port:%d", *pFd, tcp_port);
-    return;
+    *pFd = GAgent_CreateTcpServer( tcp_port );
 }
 

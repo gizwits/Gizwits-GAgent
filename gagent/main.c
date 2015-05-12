@@ -1,8 +1,6 @@
 #include "stdio.h"
 #include "gagent.h"
 #include "gagent_typedef.h"
-#include "http.h"
-#include <sys/time.h>
 
 int32 GAgent_SelectFd(pgcontext pgc,int32 sec,int32 usec )
 {

@@ -72,7 +72,13 @@ uint32 GAgent_GetDevTime_S()
     gettimeofday(&tv, NULL);
     return (uint32)(tv.tv_sec) ;
 }
-
+/****************************************************************
+FunctionName    :   GAgent_DevReset
+Description     :   dev exit but not clean the config data                   
+pgc             :   global staruc 
+return          :   NULL
+Add by Alex.lin     --2015-04-18
+****************************************************************/
 void GAgent_DevReset()
 {
     GAgent_Printf( GAGENT_CRITICAL,"Please restart GAgent !!!\r\n");
@@ -215,7 +221,10 @@ int16 GAgent_DRVWiFi_StationCustomModeStart(int8 *StaSsid,int8 *StaPass,uint16 w
     return WIFI_STATION_CONNECTED;
     //return 0;
 }
-
+int16 GAgent_DRVWiFi_StationDisconnect()
+{
+    return 0;
+}
 void GAgent_DevTick()
 {
     fflush(stdout);
@@ -253,6 +262,20 @@ void GAgent_OpenAirlink( int32 timeout_s )
 void GAgent_AirlinkResult( pgcontext pgc )
 {
     return ;
+}
+void GAgent_DRVWiFiStartScan( )
+{
+
+}
+void GAgent_DRVWiFiStopScan( )
+{
+
+}
+NetHostList_str *GAgentDRVWiFiScanResult( NetHostList_str *aplist )
+{
+    //需要再平台相关的扫描结果调用该函数。
+    //把平台相关扫描函数的结果拷贝到NetHostList_str这个结构体上。
+    return  aplist;
 }
 /*
 void Socket_CreateTCPServer(int tcp_port)

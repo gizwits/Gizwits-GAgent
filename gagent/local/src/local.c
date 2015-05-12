@@ -1,6 +1,7 @@
 #include "gagent.h"
 #include "utils.h"
 #include "lan.h"
+#include "local.h"
 
 #define ACKBUF_LEN 1024
 ppacket pLocalAckbuf=NULL;
@@ -21,7 +22,61 @@ void GAgent_RegisterSendDataHook(pfMasertMCU_SendData fun)
     PF_SendData2MCU = fun;
     return;
 }
+/****************************************************************
+FunctionName    :   Local_DataValidityCheck
+Description     :   check local receive data validity.
+Rxbuf           :   local data.
+return          :   0 useful data
+                    1 error data
+Add by Alex.lin     --2015-05-04
+****************************************************************/
+uint8 Local_DataValidityCheck( int32 fd,uint8 *buf,int32 RxLen )
+{        
+    int8 cmd=0;
+    uint8 sn=0,checksum=0;
+    uint8 *localRxbuf = NULL;
+    localRxbuf = buf;
 
+    cmd = localRxbuf[4];
+    sn  = localRxbuf[5];
+
+    if(RxLen > 0)
+    {
+        if((0xFF != localRxbuf[0]) || (0xFF != localRxbuf[1]))
+        {
+            Local_Ack2MCU_Illegal( fd,sn,GAGENT_MCU_OTHER_ERROR );
+            return 1;
+        }
+
+        checksum = GAgent_SetCheckSum( localRxbuf,RxLen-1 );
+        if( checksum != localRxbuf[RxLen-1] )
+        {
+            Local_Ack2MCU_Illegal( fd,sn,GAGENT_MCU_CHECKSUM_ERROR );
+            return 1;
+        }
+        switch(cmd)
+        {
+            case MCU_INFO_CMD_ACK:
+            case WIFI_PING2MCU_ACK:
+            case MCU_CTRL_CMD_ACK:
+            case WIFI_STATUS2MCU_ACK:
+            case MCU_REPORT:
+            case MCU_CONFIG_WIFI:
+            case MCU_RESET_WIFI:
+            case WIFI_TEST:
+            case MCU_ENABLE_BIND:
+                return 0;
+            case MCU_REPLY_GAGENT_DATA_ILLEGAL:
+                GAgent_Printf( GAGENT_WARNING,"mcu reply the data from gagent is illegal!\r\n");
+                return 0;
+            default:
+                Local_Ack2MCU_Illegal( fd,sn,GAGENT_MCU_CMD_ERROR );
+                return 1;
+        }
+    }
+    
+    return 0;
+}
 /****************************************************************
 FunctionName    :   GAgent_MoveOneByte
 Description     :   move the array one byte to left or right
@@ -67,7 +122,7 @@ int32 Local_DataAdapter( uint8 *pData,int32 dataLen )
     int32 i=0,j=0,len = 0;
     uint8 *p_start=NULL,*p_end=NULL;
 
-    len = MCU_LEN_NO_PAYLOAD;
+    len = 2;//MCU_LEN_NO_PAYLOAD;
     len += dataLen;
 
     for( i=0;i<dataLen;i++ )
@@ -91,7 +146,6 @@ Add by Alex.lin     --2015-04-07
 ****************************************************************/
 void Local_HalInit()
 {
-
     int totalCap = ACKBUF_LEN+ BUF_HEADLEN;
     int bufCap = ACKBUF_LEN;
     hal_ReceiveInit( );
@@ -154,6 +208,34 @@ void Local_Ack2MCU( int32 fd,uint8 sn,uint8 cmd )
     return ;
 }
 /****************************************************************
+FunctionName    :   Local_Ack2MCU_Illegal.
+Description     :   ack to mcu after receive mcu data but data illegal.
+fd              :   local data fd.
+sn              :   receive local data sn .
+cmd             :   ack to mcu cmd.
+****************************************************************/
+void Local_Ack2MCU_Illegal( int32 fd,uint8 sn,uint8 flag )
+{
+    int32 len = MCU_LEN_NO_PAYLOAD + 1; 
+    uint16 p0_len = htons(6);    
+    uint8 buf[MCU_LEN_NO_PAYLOAD + 1];
+    
+    memset(buf, 0, len);
+    buf[0] = MCU_HDR_FF;
+    buf[1] = MCU_HDR_FF;
+    memcpy(&buf[MCU_LEN_POS], &p0_len, 2);
+    buf[MCU_CMD_POS] = MCU_DATA_ILLEGAL;
+    buf[MCU_SN_POS] = sn;
+    buf[MCU_FLAG_POS] = 0x00;
+    buf[MCU_FLAG_POS + 1] = 0x00;
+    buf[MCU_ERROR_POS] = flag;
+    
+    buf[MCU_LEN_NO_PAYLOAD]=GAgent_SetCheckSum( buf, MCU_LEN_NO_PAYLOAD);
+    Local_SendData( fd,buf,len );
+
+    return;
+}
+/****************************************************************
 FunctionName    :   GAgent_LocalReceData
 Description     :   receive data form local io.
 pgc             :   gagent global struct. 
@@ -163,12 +245,23 @@ Add by Alex.lin     --2015-04-07
 int32 GAgent_Local_GetPacket( pgcontext pgc, ppacket Rxbuf )
 {
     int32 dataLen=0;
+    int32 i=0;
     if(FD_ISSET( pgc->rtinfo.local.uart_fd,&(pgc->rtinfo.readfd)) )
     {
+         int8 ret=0;
          resetPacket( Rxbuf ); 
          dataLen = hal_ReceivepOnePack( pgc->rtinfo.local.uart_fd,Rxbuf->phead );
+         ret = Local_DataValidityCheck( pgc->rtinfo.local.uart_fd,Rxbuf->phead,dataLen );
+         if( ret!=0 )
+         {
+            dataLen=0;
+         }
          pgc->rtinfo.local.timeoutCnt=0;
     }
+    /*
+    if( dataLen>0 )
+        GAgent_DebugPacket(Rxbuf->phead, dataLen);
+        */
     return dataLen;  
 }
 
@@ -200,8 +293,7 @@ int32 GAgent_LocalDataWriteP0( pgcontext pgc,int32 fd,ppacket pTxBuf,uint8 cmd )
     pTxBuf->pend += 1;  /* add 1 Byte of checksum */
 
     sendLen = (pTxBuf->pend) - (pTxBuf->phead);
-    
-    sendLen = Local_DataAdapter( (pTxBuf->phead)+2,( (pTxBuf->pend) ) - (pTxBuf->ppayload) );
+    sendLen = Local_DataAdapter( (pTxBuf->phead)+2,( (pTxBuf->pend) ) - ( (pTxBuf->phead)+2 ) );
     Local_SendData( fd, pTxBuf->phead,sendLen );
 
     if(GAgent_CheckAck( fd,pgc,pTxBuf->phead,sendLen,pLocalAckbuf,GAgent_GetDevTime_MS())==0)
@@ -317,12 +409,28 @@ void Local_GetInfo( pgcontext pgc )
 /****************************************************************
 FunctionName    :   GAgent_Reset
 Description     :   update old info and send disable device to 
-                    cloud,then reboot.
+                    cloud,then reboot(clean the config data,unsafe).
 pgc             :   global staruc 
 return          :   NULL
 Add by Alex.lin     --2015-04-18
 ****************************************************************/
+/* Use this function carefully!!!!!!!!!!!!!!!!!!!! */
 void GAgent_Reset( pgcontext pgc )
+{
+    GAgent_Clean_Config(pgc);
+    
+    sleep(2);
+    
+    GAgent_DevReset();
+}
+/****************************************************************
+FunctionName    :   GAgent_Clean_Config
+Description     :   GAgent clean the device config                  
+pgc             :   global staruc 
+return          :   NULL
+Add by Frank Liu     --2015-05-08
+****************************************************************/
+void GAgent_Clean_Config( pgcontext pgc )
 {
     memset( pgc->gc.old_did,0,DID_LEN);
     memset( pgc->gc.old_wifipasscode,0,PASSCODE_MAXLEN + 1);
@@ -347,9 +455,6 @@ void GAgent_Reset( pgcontext pgc )
 
     pgc->gc.flag &=~XPG_CFG_FLAG_CONNECTED;
     GAgent_DevSaveConfigData( &(pgc->gc) );
-    //2 second just for disable device time.
-    sleep(2);
-    GAgent_DevReset();
 }
 /****************************************************************
         FunctionName        :   GAgent_LocalSendGAgentstatus.
@@ -433,8 +538,7 @@ uint32 GAgent_LocalDataHandle( pgcontext pgc,ppacket Rxbuf,int32 RxLen /*,ppacke
         {
             GAgent_Printf( GAGENT_ERROR,"local data cmd=%02x checksum error !",cmd );
             GAgent_DebugPacket(Rxbuf->phead, RxLen);
-            //  Todo tell mcu 
-            return 1;
+            return 0;
         }
 
         switch( cmd )
@@ -453,7 +557,9 @@ uint32 GAgent_LocalDataHandle( pgcontext pgc,ppacket Rxbuf,int32 RxLen /*,ppacke
                 break;
             case MCU_RESET_WIFI:
                 Local_Ack2MCU( pgc->rtinfo.local.uart_fd,sn,cmd+1 );
-                GAgent_Reset( pgc );
+                GAgent_Clean_Config(pgc);
+                sleep(2);
+                GAgent_DevReset();
                 ret = 0;
                 break;
             case WIFI_PING2MCU_ACK:
@@ -463,9 +569,10 @@ uint32 GAgent_LocalDataHandle( pgcontext pgc,ppacket Rxbuf,int32 RxLen /*,ppacke
                 break;
             case MCU_CTRL_CMD_ACK:
                 ret = 0;
-                 break;
+                break;
             case WIFI_TEST:
                 Local_Ack2MCU( pgc->rtinfo.local.uart_fd,sn,cmd+1 );
+                GAgent_EnterTest( pgc );
                 ret = 0;
                 break;
 			case MCU_ENABLE_BIND:		
@@ -477,7 +584,6 @@ uint32 GAgent_LocalDataHandle( pgcontext pgc,ppacket Rxbuf,int32 RxLen /*,ppacke
             default:
                 ret = 0;
                 break;
-
         }
         //...
     }

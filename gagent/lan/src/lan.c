@@ -18,15 +18,30 @@ int32 combination_broadcast_packet(pgcontext pgc,u8* Udp_Broadcast,uint16 cmdWor
     int16 tmpFirmwareverLen = 0;
     int16 tmpMcuattrLen = 0; 
     uint8 strMacByte[3] = {0};
-    int len;
+    int pos;
 	if(NULL == pgc || NULL == Udp_Broadcast) 
 	{
 		return RET_FAILED;
 	}
 
     tmpDidLen = strlen(pgc->gc.DID);
+    if(tmpDidLen > DID_LEN)
+    {
+       tmpDidLen = DID_LEN - 1;
+    }
+    
     tmpPkLen = strlen(pgc->mcu.product_key);
+    if(tmpPkLen > PK_LEN)
+    {
+        tmpPkLen = PK_LEN;
+    }
+    
     tmpFirmwareverLen=strlen(pgc->gc.FirmwareVer);
+    if(tmpFirmwareverLen > FIRMWARELEN)
+    {
+        tmpFirmwareverLen = FIRMWARELEN;
+    }
+    
     tmpMcuattrLen = strlen(pgc->mcu.mcu_attr);
     tmpMacLen = 6;
 
@@ -40,7 +55,7 @@ int32 combination_broadcast_packet(pgcontext pgc,u8* Udp_Broadcast,uint16 cmdWor
     *(uint32 *)Udp_Broadcast = htonl(GAGENT_PROTOCOL_VERSION);
 
     //cmdword 
-    if(GAGENT_LAN_CMD_STARTUP_BROADCAST == cmdWord) 
+    if((GAGENT_LAN_CMD_STARTUP_BROADCAST == cmdWord) || (GAGENT_LAN_CMD_REPLY_BROADCAST == cmdWord)) 
     {
         //varlen =flag(1b)+cmd(2b)+didlen(2b)+did(didLen)+maclen(2b)+mac+firwareverLen(2b)+firwarever+2+productkeyLen+mcu_attr
         Udp_Broadcast[4] =LAN_PROTOCOL_FLAG_LEN+LAN_PROTOCOL_CMD_LEN+sizeof(tmpDidLen)+strlen(pgc->gc.DID) \
@@ -49,155 +64,110 @@ int32 combination_broadcast_packet(pgcontext pgc,u8* Udp_Broadcast,uint16 cmdWor
         //flag
         Udp_Broadcast[5] = 0x00;
         
-        
         //cmdword
         *(uint16 *)(Udp_Broadcast + 6) = htons(cmdWord);
-        
-        
+
+        pos = 8;
         //didlen
-        Udp_Broadcast[8]=0x00; 
-        Udp_Broadcast[9]=tmpDidLen;
+        Udp_Broadcast[pos]=0x00;
+        pos++;
+        Udp_Broadcast[pos]=tmpDidLen;
+        pos++;
         //did
         for(i=0;i<tmpDidLen;i++)
         {
-            Udp_Broadcast[10+i]=pgc->gc.DID[i];
+            Udp_Broadcast[pos+i]=pgc->gc.DID[i];
         } 
-
-
+        pos += tmpDidLen;
+        
         //maclen
-        Udp_Broadcast[9+tmpDidLen+1]=0x00;
-        Udp_Broadcast[9+tmpDidLen+2]=tmpMacLen;//macLEN
+        Udp_Broadcast[pos]=0x00;
+        pos++;
+        Udp_Broadcast[pos]=tmpMacLen;//macLEN
+        pos++;
         //mac    
         strMacByte[2] = 0;
         for(i=0;i<tmpMacLen;i++)
         {
             strMacByte[0] = pgc->minfo.szmac[i*2];
             strMacByte[1] = pgc->minfo.szmac[i*2 + 1];
-            Udp_Broadcast[9+tmpDidLen+3+i] = strtoul(strMacByte, NULL, 16);
+            Udp_Broadcast[pos+i] = strtoul(strMacByte, NULL, 16);
         }
-        
+
+        pos += tmpMacLen;
         //firmwarelen
-        Udp_Broadcast[9+tmpDidLen+2+tmpMacLen+1]=0x00;
-        Udp_Broadcast[9+tmpDidLen+2+tmpMacLen+2]=strlen(pgc->gc.FirmwareVer);//firmwareVerLen  
-        len =9+tmpDidLen+2+tmpMacLen+2+1; 
+        Udp_Broadcast[pos]=0x00;
+        pos++;
+        Udp_Broadcast[pos]=strlen(pgc->gc.FirmwareVer);//firmwareVerLen  
+        pos++;
+        
         //firmware
-        memcpy( &Udp_Broadcast[len],pgc->gc.FirmwareVer,tmpFirmwareverLen);
-        len += tmpFirmwareverLen;
+        memcpy( &Udp_Broadcast[pos],pgc->gc.FirmwareVer,tmpFirmwareverLen);
+        pos += tmpFirmwareverLen;
         
         //productkeylen
-        Udp_Broadcast[len+1]=0x00;
-        Udp_Broadcast[len+2]=strlen(pgc->mcu.product_key);
-        len=len+3;
+        Udp_Broadcast[pos]=0x00;
+        pos++;
+        Udp_Broadcast[pos]=strlen(pgc->mcu.product_key);
+        pos++;
         //productkey
-        memcpy(&Udp_Broadcast[len],pgc->mcu.product_key,tmpPkLen);
-        len += (tmpPkLen + 1);
+        memcpy(&Udp_Broadcast[pos],pgc->mcu.product_key,tmpPkLen);
+        pos += tmpPkLen;
 
         //mcu attr
-        memcpy(&Udp_Broadcast[len],pgc->mcu.mcu_attr,LAN_PROTOCOL_MCU_ATTR_LEN);
-        len += LAN_PROTOCOL_MCU_ATTR_LEN;
+        memcpy(&Udp_Broadcast[pos],pgc->mcu.mcu_attr,LAN_PROTOCOL_MCU_ATTR_LEN);
+        pos += LAN_PROTOCOL_MCU_ATTR_LEN;
     }
     else if(GAGENT_LAN_CMD_AIR_BROADCAST == cmdWord) 
     {
         //varlen =flag(1b)+cmd(2b)+didlen(2b)+did(didLen)+maclen(2b)+mac+firwareverLen(2b)+firwarever+2+productkeyLen
         Udp_Broadcast[4] =LAN_PROTOCOL_FLAG_LEN+LAN_PROTOCOL_CMD_LEN+sizeof(tmpDidLen)+strlen(pgc->gc.DID) \
         +sizeof(tmpMacLen)+tmpMacLen+sizeof(tmpPkLen)+strlen(pgc->mcu.product_key);
-
         
         //flag
         Udp_Broadcast[5] = 0x00;
         
-        
         //cmdword
-        *(uint16 *)(Udp_Broadcast + 6) = htons(cmdWord);
-        
-        
-        //didlen
-        Udp_Broadcast[8]=0x00; 
-        Udp_Broadcast[9]=tmpDidLen;
-        //did
-        for(i=0;i<tmpDidLen;i++)
-        {
-            Udp_Broadcast[10+i]=pgc->gc.DID[i];
-        } 
+        *(uint16 *)(Udp_Broadcast + 6) = htons(cmdWord);        
 
-
+        pos = 8;
         //maclen
-        Udp_Broadcast[9+tmpDidLen+1]=0x00;
-        Udp_Broadcast[9+tmpDidLen+2]=tmpMacLen;//macLEN
+        Udp_Broadcast[pos]=0x00;
+        pos++;
+        Udp_Broadcast[pos]=tmpMacLen;//macLEN
+        pos++;
         //mac    
         strMacByte[2] = 0;
         for(i=0;i<tmpMacLen;i++)
         {
             strMacByte[0] = pgc->minfo.szmac[i*2];
             strMacByte[1] = pgc->minfo.szmac[i*2 + 1];
-            Udp_Broadcast[9+tmpDidLen+3+i] = strtoul(strMacByte, NULL, 16);
+            Udp_Broadcast[pos+i] = strtoul(strMacByte, NULL, 16);
         }
 
-
-        len = 9+tmpDidLen+2+tmpMacLen+1;
+        pos += tmpMacLen;
+        
         //productkeylen
-        Udp_Broadcast[len]=0x00;
-        Udp_Broadcast[len+1]=strlen(pgc->mcu.product_key);
-        len=len+2;
+        Udp_Broadcast[pos]=0x00;
+        pos++;
+        Udp_Broadcast[pos]=strlen(pgc->mcu.product_key);
+        pos++;
         //productkey
-        memcpy(&Udp_Broadcast[len],pgc->mcu.product_key,tmpPkLen);
-        len += tmpPkLen;
-    }
-    else if(GAGENT_LAN_CMD_REPLY_BROADCAST == cmdWord)
-    {
-        //varlen =flag(1b)+cmd(2b)+didlen(2b)+did(didLen)+maclen(2b)+mac+firwareverLen(2b)+firwarever+2+productkeyLen+mcu_attr
-        Udp_Broadcast[4] =LAN_PROTOCOL_FLAG_LEN+LAN_PROTOCOL_CMD_LEN+sizeof(tmpDidLen)+strlen(pgc->gc.DID) \
-        +sizeof(tmpMacLen)+tmpMacLen+sizeof(tmpFirmwareverLen)+strlen(pgc->gc.FirmwareVer)+sizeof(tmpPkLen)+strlen(pgc->mcu.product_key)+LAN_PROTOCOL_MCU_ATTR_LEN;
+        memcpy(&Udp_Broadcast[pos],pgc->mcu.product_key,tmpPkLen);
+        pos += tmpPkLen;
 
-        //flag
-        Udp_Broadcast[5] = 0x00;
-        
-        //cmdword
-        *(uint16 *)(Udp_Broadcast + 6) = htons(cmdWord);
-        
-        
         //didlen
-        Udp_Broadcast[8]=0x00; 
-        Udp_Broadcast[9]=tmpDidLen;
+        Udp_Broadcast[pos]=0x00; 
+        pos++;
+        Udp_Broadcast[pos]=tmpDidLen;
+        pos++;
+        
         //did
         for(i=0;i<tmpDidLen;i++)
         {
-            Udp_Broadcast[10+i]=pgc->gc.DID[i];
+            Udp_Broadcast[pos + i]=pgc->gc.DID[i];
         } 
-
-
-        //maclen
-        Udp_Broadcast[9+tmpDidLen+1]=0x00;
-        Udp_Broadcast[9+tmpDidLen+2]=tmpMacLen;//macLEN
-        //mac    
-        strMacByte[2] = 0;
-        for(i=0;i<tmpMacLen;i++)
-        {
-            strMacByte[0] = pgc->minfo.szmac[i*2];
-            strMacByte[1] = pgc->minfo.szmac[i*2 + 1];
-            Udp_Broadcast[9+tmpDidLen+3+i] = strtoul(strMacByte, NULL, 16);
-        }
-        
-        //firmwarelen
-        Udp_Broadcast[9+tmpDidLen+2+tmpMacLen+1]=0x00;
-        Udp_Broadcast[9+tmpDidLen+2+tmpMacLen+2]=strlen(pgc->gc.FirmwareVer);//firmwareVerLen  
-        len =9+tmpDidLen+2+tmpMacLen+2+1; 
-        //firmware
-        memcpy( &Udp_Broadcast[len],pgc->gc.FirmwareVer,tmpFirmwareverLen);
-        len += tmpFirmwareverLen;
-        
-        //productkeylen
-        Udp_Broadcast[len+1]=0x00;
-        Udp_Broadcast[len+2]=strlen(pgc->mcu.product_key);
-        len=len+3;
-        //productkey
-        memcpy(&Udp_Broadcast[len],pgc->mcu.product_key,tmpPkLen);
-        len += (tmpPkLen + 1);
-
-
-        //mcu attr
-        memcpy(&Udp_Broadcast[len],pgc->mcu.mcu_attr,LAN_PROTOCOL_MCU_ATTR_LEN);
-        len += LAN_PROTOCOL_MCU_ATTR_LEN;
+        pos += tmpDidLen;
     }
 	else 
 	{
@@ -289,7 +259,8 @@ void GAgent_Lan_SendTcpData(pgcontext pgc,ppacket pTxBuf)
         Add by Frank Liu     --2015-04-22
 ****************************************************************/
 void CreateUDPBroadCastServer(pgcontext pgc)
-{
+{   
+
     if(NULL == pgc)
     {
         return;
@@ -304,6 +275,7 @@ void CreateUDPBroadCastServer(pgcontext pgc)
     {
        pgc->ls.addr = Lan_CreateUDPBroadCastServer(&(pgc->ls.udpBroadCastServerFd),LAN_UDP_BROADCAST_SERVER_PORT);
     }
+    signal(SIGPIPE, SIG_IGN); 
 }
 /****************************************************************
         FunctionName        :   DestroyUDPBroadCastServer.
@@ -424,8 +396,6 @@ uint32 GAgent_Lan_Handle(pgcontext pgc, ppacket prxBuf , ppacket ptxBuf,int32 le
     uint16 GAgentStatus=0;
     GAgentStatus = pgc->rtinfo.GAgentStatus;
 
-    
-
     if( (GAgentStatus&WIFI_MODE_AP) == WIFI_MODE_AP )
     {
         GAgent_DoTcpWebConfig( pgc );
@@ -484,7 +454,6 @@ int32 LAN_InitSocket(pgcontext pgc)
     Lan_CreateTCPServer(&(pgc->ls.tcpServerFd), GAGENT_TCP_SERVER_PORT);
     Lan_CreateUDPServer(&(pgc->ls.udpServerFd), LAN_UDP_SERVER_PORT );
     CreateUDPBroadCastServer(pgc);//startup broadcast
-    signal(SIGPIPE, SIG_IGN);
     return 0;
 }
 

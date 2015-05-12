@@ -22,6 +22,7 @@
 #define GAGENT_LAN_CMD_INFO                 0X0013
 #define GAGENT_LAN_CMD_TICK                 0X0015
 #define GAGENT_LAN_CMD_TEST                 0X0017
+#define GAGENT_LAN_REPLY_TEST               0X0018
 #define GAGENT_LAN_CMD_AIR_BROADCAST        0X0019
 
 #define LAN_PROTOCOL_HEAD_LEN              4
@@ -29,7 +30,7 @@
 #define LAN_PROTOCOL_CMD_LEN               2
 #define LAN_PROTOCOL_MCU_ATTR_LEN          8
 
-void Lan_CreateTCPServer(int32 *pFd, int32 tcp_port);
-void Lan_CreateUDPServer(int32 *pFd, int udp_port);
-struct sockaddr_t Lan_CreateUDPBroadCastServer(int32 *pFd, int udp_port );
+void Lan_CreateTCPServer(int32 *pFd, uint16 tcp_port);
+void Lan_CreateUDPServer(int32 *pFd, uint16 udp_port);
+struct sockaddr_t Lan_CreateUDPBroadCastServer(int32 *pFd, uint16 udp_port );
 #endif

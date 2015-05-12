@@ -7,89 +7,19 @@
         Description         :   init clients socket and create tcp/udp server.
         Add by Will.zhou     --2015-03-10
 ****************************************************************/
-void Lan_CreateUDPServer(int32 *pFd, int udp_port)
+void Lan_CreateUDPServer(int32 *pFd, uint16 udp_port)
 {
-    struct sockaddr_t addr;
-
-    if(NULL == pFd)
-    {
-        GAgent_Printf(GAGENT_ERROR, "UDPServer pFd NULL!");
-        return ;
-    }
-    
-    if (*pFd == -1)
-    {
-        *pFd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-        if(*pFd < 0)
-        {
-            GAgent_Printf(GAGENT_ERROR, "UDPServer socket create error,errno:%d", errno);
-            *pFd = -1;
-            return ;
-        }
-        
-        if(Gagent_setsocketnonblock(*pFd) != 0)
-        {
-            GAgent_Printf(GAGENT_ERROR,"UDP Server Gagent_setsocketnonblock fail.errno:%d", errno);
-        }
-        memset(&addr, 0x0, sizeof(addr));
-        addr.sin_family = AF_INET;
-        addr.sin_port = htons(udp_port);
-        addr.sin_addr.s_addr = INADDR_ANY;
-        if(bind(*pFd, (struct sockaddr *)&addr, sizeof(addr)) != 0)
-        {
-            GAgent_Printf(GAGENT_ERROR, "UDPServer socket bind error,errno:%d", errno);
-            close(*pFd);
-            *pFd = -1;
-            return ;
-        }
-
-    }
-    
-    GAgent_Printf(GAGENT_DEBUG,"UDP Server socketid:%d on port:%d", *pFd, udp_port);
-    return;
+    *pFd = GAgent_CreateUDPServer( udp_port );
 }
 /****************************************************************
         FunctionName        :   Lan_CreateUDPBroadCastServer.
         Description         :   create udp BroadCastServer.
         Add by Will.zhou     --2015-03-10
 ****************************************************************/
-struct sockaddr_t Lan_CreateUDPBroadCastServer(int32 *pFd, int udp_port )
+struct sockaddr_t Lan_CreateUDPBroadCastServer(int32 *pFd, uint16 udp_port )
 {
-    int udpbufsize=2;
     struct sockaddr_t addr;
-    memset(&addr,0,sizeof(addr));
-
-    if(INVALID_SOCKET == *pFd)
-    {
-        *pFd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-
-        if(*pFd < 0)
-        {
-            GAgent_Printf(GAGENT_DEBUG, "UDP BC socket create error,errno:%d", errno);
-            *pFd = INVALID_SOCKET;
-        }
-
-        if(Gagent_setsocketnonblock(*pFd) != 0)
-        {
-            GAgent_Printf(GAGENT_DEBUG,"UDP BC Server Gagent_setsocketnonblock fail.errno:%d", errno);
-        }
-
-        addr.sin_family = AF_INET;
-        addr.sin_port=htons(udp_port);
-        addr.sin_addr.s_addr=htonl(INADDR_BROADCAST);
-
-        if(setsockopt(*pFd, SOL_SOCKET, SO_BROADCAST, &udpbufsize,sizeof(int)) != 0)
-        {
-            GAgent_Printf(GAGENT_DEBUG,"UDP BC Server setsockopt error,errno:%d", errno);
-        }
-        if(bind(*pFd, (struct sockaddr *)&addr, sizeof(addr)) != 0)
-        {
-            GAgent_Printf(GAGENT_DEBUG,"UDP BC Server bind error,errno:%d", errno);
-            close(*pFd);
-            *pFd = INVALID_SOCKET;
-        }
-    }
-    GAgent_Printf(GAGENT_DEBUG,"UDP BC Server socketid:%d on port:%d", *pFd, udp_port);
+    *pFd = GAgent_CreateUDPBroadCastServer( udp_port, &addr );
     return addr;
 }
 

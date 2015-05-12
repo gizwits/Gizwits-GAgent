@@ -439,7 +439,12 @@ int32 Mqtt_DispatchPublishPacket( pgcontext pgc,u8 *packetBuffer,int32 packetLen
                 break;
             // wan client on line numbers res.
             case 0x0210:
-             Mqtt_ResOnlineClient( pgc,pHiP0Data, HiP0DataLen);
+                Mqtt_ResOnlineClient( pgc,pHiP0Data, HiP0DataLen);
+            break;
+            case 0x0211:
+                //todo MCU OTA.
+                GAgent_Printf( GAGENT_DEBUG,"M2M cmd to check OTA!!! ");
+                GAgent_SetCloudConfigStatus( pgc,CLOUD_RES_GET_TARGET_FID ); 
             break;
             default:
             break;

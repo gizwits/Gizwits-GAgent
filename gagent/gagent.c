@@ -17,7 +17,7 @@ void GAgent_Init( pgcontext *pgc )
 {
     GAgent_DevInit( *pgc );
     GAgent_NewVar( pgc );
-    GAgent_logevelSet( /*GAGENT_DEBUG*/ GAGENT_WARNING );
+    GAgent_logevelSet( /*GAGENT_DUMP*/ GAGENT_WARNING );
 
     GAgent_VarInit( pgc );
     GAgent_LocalInit( *pgc );
@@ -87,7 +87,6 @@ void GAgent_VarInit( pgcontext *pgc )
     (*pgc)->rtinfo.Rxbuf->bufcap = bufCap;
     resetPacket( (*pgc)->rtinfo.Rxbuf );
 
-
     /* get config data form flash */
     GAgent_DevGetConfigData( &(*pgc)->gc );
     (*pgc)->rtinfo.waninfo.CloudStatus=CLOUD_INIT;
@@ -125,7 +124,6 @@ void GAgent_VarInit( pgcontext *pgc )
         
         if( strlen( ((*pgc)->gc.old_productkey) )!=(PK_LEN) )
             memset( (*pgc)->gc.old_productkey,0,PK_LEN + 1 );
-
 
         if( strlen( (*pgc)->gc.m2m_ip)>IP_LEN_MAX || strlen( (*pgc)->gc.m2m_ip)<IP_LEN_MIN )
             memset( (*pgc)->gc.m2m_ip,0,IP_LEN_MAX + 1 );
@@ -369,7 +367,11 @@ void GAgent_RefreshIPTick( pgcontext pgc,uint32 dTime_s )
 {
     uint32 cTime=0,dTime=0;
     int8 tmpip[32] = {0},failed=0,ret=0,flag=0;
-    
+
+    if( (pgc->rtinfo.GAgentStatus)&WIFI_MODE_TEST == WIFI_MODE_TEST )
+    {
+        return ;
+    }
     pgc->rtinfo.waninfo.RefreshIPLastTime+=dTime_s;
     if( (pgc->rtinfo.waninfo.RefreshIPLastTime) >= (pgc->rtinfo.waninfo.RefreshIPTime) )
     {
@@ -515,6 +517,26 @@ void GAgent_Config( uint8 typed,pgcontext pgc )
         break;
     }
 }
+uint8 GAgent_EnterTest( pgcontext pgc )
+{
+    pgc->rtinfo.scanWifiFlag = 0;
+    memset( pgc->gc.GServer_ip,0,IP_LEN_MAX+1);
+    memset( pgc->gc.m2m_ip,0,IP_LEN_MAX+1);
+
+    GAgent_DevSaveConfigData( &(pgc->gc) );
+    GAgent_SetWiFiStatus( pgc,WIFI_MODE_TEST,1 );
+    GAgent_DRVWiFiStartScan();
+    return 0;
+}
+uint8 GAgent_ExitTest( pgcontext pgc )
+{
+    int16 ret=0;
+    pgc->rtinfo.scanWifiFlag = 0;
+    ret = GAgent_DRVWiFi_StationDisconnect();
+    GAgent_SetWiFiStatus( pgc,WIFI_MODE_TEST,0 );
+    GAgent_DRVWiFiStopScan( );
+    return 0;
+}
 /****************************************************************
 *       FunctionName      :     GAgent_BaseTick
 *       Description       :     the function will return 1 second at least
@@ -548,6 +570,7 @@ uint32 GAgent_BaseTick()
     }
     return dTime;
 }
+
 /****************************************************************
 *       FunctionName      :     GAgent_Tick
 *       Description       :     GAgent runing Tick.

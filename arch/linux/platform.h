@@ -23,7 +23,7 @@
 #define _POSIX_C_SOURCE 200809L
 #include "hal_uart.h"
 
-#define WIFI_SOFTVAR    "04010002"
+#define WIFI_SOFTVAR    "04010003"
 #define WIFI_HARDVER    "00-LINUX"
 
 #define UART_NAME       "/dev/ttyUSB0"
