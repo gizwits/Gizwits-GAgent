@@ -12,13 +12,14 @@
 #define MQTT_STATUS_RES_LOGINTOPIC3     9
 #define MQTT_STATUS_RUNNING             10
 
-
+uint32 GAgent_ReqServerTime(pgcontext pgc);
+uint32 GAgent_Get_Gserver_Time(uint32 *clock,uint8 *Http_recevieBuf,int32 respondCode);
 int32 Cloud_InitSocket( int32 iSocketId,int8 *p_szServerIPAddr,int32 port,int8 flag );
 
 uint32 Cloud_ReqRegister( pgcontext pgc );
 int8 Cloud_ResRegister( uint8 *cloudConfiRxbuf,int32 buflen,int8 *pDID,int32 respondCode );
 uint32 Cloud_ReqGetFid( pgcontext pgc,enum OTATYPE_T type );
-int8 Cloud_ResGetFid( uint8 *download_url, uint8 *fwver, uint8 *cloudConfiRxbuf,int32 respondCode );
+int8 Cloud_ResGetFid( int8 *download_url, int8 *fwver, uint8 *cloudConfiRxbuf,int32 respondCode );
 uint32 Cloud_ReqProvision( pgcontext pgc );
 uint32 Cloud_ResProvision( int8 *szdomain,int32 *port,uint8 *cloudConfiRxbuf,int32 respondCode );
 uint32 Cloud_ReqConnect( pgcontext pgc,const int8 *username,const int8 *password );
@@ -33,6 +34,6 @@ uint32 Cloud_JD_Post_ResFeed_Key( pgcontext pgc,int32 respondCode );
 int32 Cloud_ReadGServerConfigData( pgcontext pgc ,int32 socket,uint8 *buf,int32 buflen );
 uint32 Cloud_ConfigDataHandle( pgcontext pgc );
 int32 Cloud_M2MDataHandle(  pgcontext pgc,ppacket pbuf /*, ppacket poutBuf*/, uint32 buflen);
-uint32 Cloud_isNeedOTA( uint8 *sFV );
+uint32 Cloud_isNeedOTA( int8 *sFV );
 void Log2Cloud(pgcontext pgc);
 #endif

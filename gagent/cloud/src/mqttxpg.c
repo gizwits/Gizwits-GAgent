@@ -29,6 +29,10 @@ int32 MQTT_readPacket( int32 socketid,ppacket pbuf,int32 bufferLen )
     
     messageLen = mqtt_parse_rem_len(pData);
     varLen = mqtt_num_rem_len_bytes(pData);
+    if(varLen<1 || varLen>4)
+    {
+         return -3;
+    }
     packet_length = varLen + messageLen + 1;
 
     if (bytes_rcvd < packet_length)
@@ -62,7 +66,7 @@ static int32 init_subTopic( mqtt_broker_handle_t* broker ,pgcontext pgc,char *Su
     {
     case 1:
         //4.6
-        productKeyLen = strlen( pgc->mcu.product_key );
+        productKeyLen = strlen( (const int8 *)pgc->mcu.product_key );
         memcpy( Sub_TopicBuf,"ser2cli_noti/",strlen("ser2cli_noti/") );
         memcpy( Sub_TopicBuf+strlen("ser2cli_noti/"),pgc->mcu.product_key,productKeyLen );
         Sub_TopicBuf[strlen("ser2cli_noti/")+productKeyLen] = '\0';
@@ -177,7 +181,7 @@ int32 Mqtt_SendConnetPacket( mqtt_broker_handle_t *pstBroketHandle, int32 socket
 
 int32 Mqtt_Login2Server(  int32 socketid,const uint8 *username,const uint8 *password )
 {
-    if( Mqtt_SendConnetPacket( &g_stMQTTBroker,socketid,username,password ) == 0)
+    if( Mqtt_SendConnetPacket( &g_stMQTTBroker,socketid,(const int8*)username,(const int8*)password ) == 0)
     {    
         GAgent_Printf(GAGENT_INFO," Mqtt_SendConnetPacket OK!");
         return 0;
@@ -266,33 +270,11 @@ int32 MQTT_SenData( int8 *szDID, ppacket pbuf,/*uint8 *buf,*/ int32 buflen )
     for(i=0;i<sendpacklen;i++)
         GAgent_Printf(GAGENT_DUMP," %02X",sendpack[i] );
     
-    PubMsg( &g_stMQTTBroker,msgtopic,sendpack,sendpacklen,0 );
+    PubMsg( &g_stMQTTBroker,msgtopic,(int8 *)sendpack,sendpacklen,0 );
 
     return 0;
 }
-int32 MQTT_DoCloudMCUCmd(u8 clientid[32], u8 did[32], u8 *pHiP0Data, int32 P0DataLen)
-{
-    int32 varlen;
-    int32 datalen;
-    u8 *pP0Data;
-    int32 pP0DataLen;
-    int32 i;
 
-    /* 根据报文中的报文长度确定报文是否是一个有效的报文 */
-    varlen = mqtt_num_rem_len_bytes(pHiP0Data+4);
-    /* 这个地方+3是因为MQTT库里面实现把 UDP flag算到messagelen里面，这里为了跟mqtt库保持一致所以加3 */
-    datalen = mqtt_parse_rem_len(pHiP0Data+3); 
-    
-    pP0DataLen = datalen-3;// 因为 flag(1B)+cmd(2B)=3B
-    
-    // 到了payload开始的地方
-    pP0Data = &pHiP0Data[7+varlen]; 
-
-    //i = GAgentV4_Write2Mcu_with_p0( 0, MCU_CTRL_CMD,pP0Data,pP0DataLen );
-    GAgent_Printf(GAGENT_INFO, "MCU Do CLOUD CMD return:%d", i);
-    
-    return 0;
-}
 /********************************************************************
  *
  *  FUNCTION   : Mqtt send request packbag to server ask online client
@@ -337,20 +319,20 @@ void Mqtt_ResOnlineClient( pgcontext pgc,char *buf,int32 buflen)
 void Mqtt_Ack2Cloud( uint8 *pPhoneClient,uint8* szDID,uint8 *pData,uint32 datalen )
 {
     uint8 msgtopic[60]={0};
-    int8 pos=0;
+    uint8 pos=0;
     memcpy( msgtopic+pos,"dev2app/",strlen("dev2app/"));
     pos+=strlen( "dev2app/" );
-    memcpy( msgtopic+pos,szDID,strlen(szDID) );
-    pos+=strlen(szDID);
+    memcpy( msgtopic+pos,szDID,strlen((const int8 *)szDID) );
+    pos+=strlen((const int8*)szDID);
     msgtopic[pos] = '/';
     pos++;
-    memcpy( msgtopic+pos,pPhoneClient,strlen(pPhoneClient));
-    pos+=strlen( pPhoneClient );
+    memcpy( msgtopic+pos,pPhoneClient,strlen( (const int8 *)pPhoneClient) );
+    pos+=strlen( (const int8*)pPhoneClient );
     msgtopic[pos] = '\0';
-    GAgent_Printf( GAGENT_DEBUG,"msgtopic:%s  :len=%d",msgtopic,strlen(msgtopic) );
+    GAgent_Printf( GAGENT_DEBUG,"msgtopic:%s  :len=%d",msgtopic,strlen( (const int8 *)msgtopic) );
 
     //TODO ack buf.
-    PubMsg( &g_stMQTTBroker,msgtopic,pData,datalen,0 );
+    PubMsg( &g_stMQTTBroker,( const int8*)msgtopic,( int8* )pData,datalen,0 );
     return ;
 }
 int32 Mqtt_DispatchPublishPacket( pgcontext pgc,u8 *packetBuffer,int32 packetLen )
@@ -364,7 +346,6 @@ int32 Mqtt_DispatchPublishPacket( pgcontext pgc,u8 *packetBuffer,int32 packetLen
     u8  clientid[PHONECLIENTID + 1];
     //int32 clientidlen = 0;
     u8 *pTemp;
-    u8  DIDBuffer[32];
     u16 cmd;
     u16 *pcmd=NULL;
 
@@ -375,10 +356,14 @@ int32 Mqtt_DispatchPublishPacket( pgcontext pgc,u8 *packetBuffer,int32 packetLen
     HiP0DataLen = mqtt_parse_publish_msg(packetBuffer, &pHiP0Data); 
 
 
-    if(strncmp(topic,"app2dev/",strlen("app2dev/"))==0)
+    if(strncmp((const int8*)topic,"app2dev/",strlen("app2dev/"))==0)
     {
     
         varlen = mqtt_num_rem_len_bytes( pHiP0Data+3 );
+        if(varlen<1 || varlen>4)
+        {
+            return 0;
+        }
 
         pcmd = (u16*)&pHiP0Data[4+varlen+1];
         cmd = ntohs( *pcmd );  
@@ -386,11 +371,9 @@ int32 Mqtt_DispatchPublishPacket( pgcontext pgc,u8 *packetBuffer,int32 packetLen
         i = 0;
         while (*pTemp != '/')
         {
-            DIDBuffer[i] = *pTemp;
             i++;
             pTemp++;
         }
-        DIDBuffer[i] = '\0';
 
         pTemp ++; /* 跳过\/ */
         i=0;
@@ -406,7 +389,7 @@ int32 Mqtt_DispatchPublishPacket( pgcontext pgc,u8 *packetBuffer,int32 packetLen
             i = PHONECLIENTID;
         }
         clientid[i]= '\0';
-        strcpy( pgc->rtinfo.waninfo.phoneClientId ,clientid );
+        strcpy( pgc->rtinfo.waninfo.phoneClientId ,(const int8*)clientid );
         memcpy( packetBuffer,pHiP0Data,HiP0DataLen );
         GAgent_Printf( GAGENT_INFO,"Cloud CMD =%04X",cmd );
         if( cmd==0x0093 )
@@ -417,7 +400,7 @@ int32 Mqtt_DispatchPublishPacket( pgcontext pgc,u8 *packetBuffer,int32 packetLen
             pHiP0Data[4+varlen+1]=0x00;
             pHiP0Data[4+varlen+1+1]=0x94;
             //ack to cloud
-            Mqtt_Ack2Cloud( pgc->rtinfo.waninfo.phoneClientId,pgc->gc.DID,pHiP0Data,HiP0DataLen );
+            Mqtt_Ack2Cloud( (uint8*)pgc->rtinfo.waninfo.phoneClientId,(uint8*)pgc->gc.DID,pHiP0Data,HiP0DataLen );
 
             pHiP0Data[4+varlen+1] = tempCmd[0];
             pHiP0Data[4+varlen+1+1] = tempCmd[1];
@@ -425,7 +408,7 @@ int32 Mqtt_DispatchPublishPacket( pgcontext pgc,u8 *packetBuffer,int32 packetLen
         return HiP0DataLen;
     }
     // 订阅最新固件响应
-    else if(strncmp(topic,"ser2cli_res/",strlen("ser2cli_res/"))==0)
+    else if(strncmp((const int8*)topic,"ser2cli_res/",strlen("ser2cli_res/"))==0)
     {
 
         pcmd = (u16*)&pHiP0Data[4];
@@ -439,7 +422,12 @@ int32 Mqtt_DispatchPublishPacket( pgcontext pgc,u8 *packetBuffer,int32 packetLen
                 break;
             // wan client on line numbers res.
             case 0x0210:
-             Mqtt_ResOnlineClient( pgc,pHiP0Data, HiP0DataLen);
+                Mqtt_ResOnlineClient( pgc,(int8*)pHiP0Data, HiP0DataLen);
+            break;
+            case 0x0211:
+                //todo MCU OTA.
+                GAgent_Printf( GAGENT_DEBUG,"M2M cmd to check OTA!!! ");
+                GAgent_SetCloudConfigStatus( pgc,CLOUD_RES_GET_TARGET_FID ); 
             break;
             default:
             break;

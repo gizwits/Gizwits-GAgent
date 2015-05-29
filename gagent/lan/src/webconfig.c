@@ -1,9 +1,9 @@
 #include "gagent.h"
-
+#include "lan.h"
 
 int32 handleWebConfig( pgcontext pgc,int32 fd)
 {
-    int32     read_len;
+    int32   read_len;
     int8    *buf_head, *buf_body, *index_ssid, *index_pass, *p;
     pgconfig pConfigData=NULL;
     pConfigData = &(pgc->gc);
@@ -33,7 +33,8 @@ int32 handleWebConfig( pgcontext pgc,int32 fd)
     
     memset(buf_body, 0, 1024);
 
-    if( strstr(buf_head, "web_config.cgi") == NULL){
+    if( strstr(buf_head, "web_config.cgi") == NULL)
+    {
         snprintf(buf_body, 1024, "%s", "<html><body><form action=\"web_config.cgi\" method=\"get\">"
                  "<div align=\"center\" style=\"font-size:30px; padding-top:100px;\">"
                  "<p>[0~9],[a~z],[A~Z],[-],[_],[.]</p>"
@@ -48,12 +49,13 @@ int32 handleWebConfig( pgcontext pgc,int32 fd)
                  "Content-Length: %d\r\n"
                  "Cache-Control: no-cache\r\n"
                  "Connection: close\r\n\r\n",
-                 strlen(buf_body));
+                 (int)strlen(buf_body));
         
         send(fd, buf_head, strlen(buf_head), 0);
         send(fd, buf_body, strlen(buf_body), 0);
     }
-    else{
+    else
+    {
         //GET /web_config.cgi?fname=chensf&lname=pinelinda HTTP/1.1
         index_ssid = strstr(buf_head, "ssid=");
         index_pass = strstr(buf_head, "pass=");
@@ -93,7 +95,7 @@ int32 handleWebConfig( pgcontext pgc,int32 fd)
                      "Content-Length: %d\r\n"
                      "Cache-Control: no-cache\r\n"
                      "Connection: close\r\n\r\n",
-                     strlen(buf_body));
+                     (int)strlen(buf_body));
 
             send(fd, buf_head, strlen(buf_head), 0);
             send(fd, buf_body, strlen(buf_body), 0);   
@@ -137,26 +139,26 @@ void GAgent_DoTcpWebConfig( pgcontext pgc )
         if( pgc->ls.tcpWebConfigFd>0 )
         {
             close( pgc->ls.tcpWebConfigFd );
-            pgc->ls.tcpWebConfigFd = -1;
+            pgc->ls.tcpWebConfigFd = INVALID_SOCKET;
         }
         return ;
     }
 
     if( pgc->ls.tcpWebConfigFd <= 0 )
     {
-     GAgent_Printf( GAGENT_DEBUG,"Creat Tcp Web Server." );
-     pgc->ls.tcpWebConfigFd = GAgent_CreateWebConfigServer( 80 );   
+        GAgent_Printf( GAGENT_DEBUG,"Creat Tcp Web Server." );
+        pgc->ls.tcpWebConfigFd = GAgent_CreateWebConfigServer( 80 );   
     }
-
+    if( pgc->ls.tcpWebConfigFd<0 )
+        return ;
     if(FD_ISSET(pgc->ls.tcpWebConfigFd, &(pgc->rtinfo.readfd)))
     {
         /* if nonblock, can be done in accept progress */
-        newfd = Socket_accept(pgc->ls.tcpWebConfigFd, &addr, &addrLen);
+        newfd = Socket_accept(pgc->ls.tcpWebConfigFd, &addr, (socklen_t *)&addrLen);
         if(newfd > 0)
         {
             Lan_AddTcpNewClient(pgc, newfd, &addr);
         }
-
     }
 
     for(i = 0;i < LAN_TCPCLIENT_MAX; i++)
@@ -170,8 +172,8 @@ void GAgent_DoTcpWebConfig( pgcontext pgc )
             Lan_setClientTimeOut(pgc, i);
             handleWebConfig( pgc,fd);
             close(fd);
-            fd = -1;
-            pgc->ls.tcpClient[i].fd=-1;
+            fd = INVALID_SOCKET;
+            pgc->ls.tcpClient[i].fd=INVALID_SOCKET;
         }
     }
 }

@@ -28,9 +28,6 @@ typedef void (*task)(void *arg);
 #define TRUE 1
 #endif /* endof */
 
-#define IS_BIT_SET(val, bit) (((val) >> (bit)) & (1 >> 0))
-//#define SET_BIT(val, bit) ((val) |= (1 << bit))
-#define CLEAR_BIT(val, bit) ((val) &= ~(1 << bit))
 
 #define DID_LEN      24
 #define PASSCODE_LEN 10
@@ -97,6 +94,7 @@ typedef struct _packet
 
 typedef struct  _GAgent3Cloud
 {
+#pragma anon_unions    
     union
     {
         jd_info jdinfo;
@@ -136,7 +134,7 @@ typedef struct _XPG_MCU
     uint32 oneShotTimeout;
 
     uint16  passcodeEnableTime;
-	uint16  passcodeTimeout;
+    uint16  passcodeTimeout;
     uint8 timeoutCnt;
     //int8 loseTime;
     /* 8+1('\0') for print32f. */
@@ -162,7 +160,7 @@ typedef struct _waninfo
     uint32 RefreshIPLastTime;
     uint32 RefreshIPTime;
     int32 http_socketid;
-    int32 m2m_socketid;    
+    int32 m2m_socketid;
     int32 wanclient_num;
 
     uint16 CloudStatus;
@@ -187,28 +185,43 @@ typedef struct _localmodule
     int32 uart_fd;
 
 }localmodule;
+typedef struct _ApHostList_str
+{
+     uint8 ssid[SSID_LEN_MAX+1];
+     uint8 ApPower; /* 0-100 min:0;max:100 */
+}ApHostList_str;
+typedef struct _NetHostList_str
+{
+     uint8 ApNum;
+     ApHostList_str* ApList;
+}NetHostList_str;
 typedef struct runtimeinfo_t
 {
-    //uint32 connect2CloudLastTime;
+    uint32 clock;
     uint32 wifistatustime;
-    //uint32 send2LocalLastTime
-    //int32 uart_fd;
     uint32 updatestatusinterval;
+    uint32 testLastTimeStamp;
+    uint32 wifiLastScanTime;
+
     uint16 GAgentStatus;/* gagentStatus */
     uint16 lastGAgentStatus;
    
     int8 status_ip_flag; /* when got the ip in station mode,value is 1. */
     uint8 logSwitch[2];
     int8 loglevel;
+    uint8 scanWifiFlag;
+    int8 firstStartUp;
+
     wifistatus devWifiStatus;
     
     WanInfo waninfo;
     localmodule local;
     fd_set readfd;
-    ppacket Txbuf;/* send data to local buf */
+    //ppacket Txbuf;/* send data to local buf */
     ppacket Rxbuf;/* receive data from local buf */
+    NetHostList_str aplist;
     RunTimeInfo3rd cloud3rd;
-	int8 firstStartUp;
+
 }runtimeinfo, *pruntimeinfo;
 
 typedef struct modeinfo_t
@@ -235,9 +248,9 @@ typedef struct lanserver_t
     int32 tcpWebConfigFd;
     int32 tcpClientNums;
     uint32 onboardingBroadCastTime;//config success broadcast Counter
-	uint32 startupBroadCastTime;//first on ele broadcast Counter
+    uint32 startupBroadCastTime;//first on ele broadcast Counter
     int32 broResourceNum;//public resource counter for broadcast
-	
+
     struct{
         int32 fd;
         int32 timeout;

@@ -7,7 +7,7 @@ extern int32 g_MQTTStatus;
 #define kCRLFLineEnding  "\r\n\r\n"
 
 
-int32 Http_POST( int32 socketid, const int8 *host,const int8 *passcode,const int8 *mac,const uint8 *product_key )
+int32 Http_POST( int32 socketid, const int8 *host,const int8 *passcode,const int8 *mac,const int8 *product_key )
 {
     int32 ret=0;
     uint8 *postBuf=NULL;
@@ -15,7 +15,6 @@ int32 Http_POST( int32 socketid, const int8 *host,const int8 *passcode,const int
     int8 Content[100]={0};
     int32 ContentLen=0;
     int32 totalLen=0;
-    int8 *contentType="application/x-www-form-urlencoded";
     
     postBuf = (uint8*)malloc(400);
     if (postBuf==NULL) return 1;
@@ -23,7 +22,7 @@ int32 Http_POST( int32 socketid, const int8 *host,const int8 *passcode,const int
 
     sprintf(Content,"passcode=%s&mac=%s&product_key=%s",passcode,mac,product_key);
     ContentLen=strlen(Content);
-    snprintf( postBuf,400,"%s %s %s%s%s %s%s%s %d%s%s%s%s%s",
+    snprintf( (char *)postBuf,400,"%s %s %s%s%s %s%s%s %d%s%s%s%s%s",
               "POST" ,url,"HTTP/1.1",kCRLFNewLine,
               "Host:",host,kCRLFNewLine,
               "Content-Length:",ContentLen,kCRLFNewLine,
@@ -31,7 +30,7 @@ int32 Http_POST( int32 socketid, const int8 *host,const int8 *passcode,const int
               kCRLFNewLine,
               Content
         );
-    totalLen = strlen( postBuf );
+    totalLen = strlen( (char *)postBuf );
     GAgent_Printf(GAGENT_DEBUG,"http_post:%s %d",postBuf,totalLen);    
     ret = send( socketid,postBuf,totalLen,0 );
     GAgent_Printf(GAGENT_DEBUG,"http_post ret: %d",ret);    
@@ -156,10 +155,8 @@ int32 Http_Delete( int32 socketid, const int8 *host,const int8 *did,const int8 *
                             <0 error,and need to close 
                             the socket.
 ******************************************************/
-int32 Http_ReadSocket( int32 socket,int8 *Http_recevieBuf,int32 bufLen )
+int32 Http_ReadSocket( int32 socket,uint8 *Http_recevieBuf,int32 bufLen )
 {
-    fd_set readfds;
-    int32 i=0;
     int32 bytes_rcvd = 0; 
     if( socket<=0 )
         return bytes_rcvd;
@@ -189,7 +186,7 @@ int32 Http_Response_Code( uint8 *Http_recevieBuf )
     int8 re_code[10] ={0};
     memset(re_code,0,sizeof(re_code));
 
-    p_start = strstr( Http_recevieBuf," " );
+    p_start = strstr( (char *)Http_recevieBuf," " );
     if(NULL == p_start)
     {
         return RET_FAILED;
@@ -210,9 +207,8 @@ int32 Http_Response_Code( uint8 *Http_recevieBuf )
 int32 Http_Response_DID( uint8 *Http_recevieBuf,int8 *DID )
 {
     int8 *p_start = NULL;
-    int8 *p_end =NULL;
     memset(DID,0,DID_LEN);
-    p_start = strstr( Http_recevieBuf,"did=");
+    p_start = strstr( (char *)Http_recevieBuf,"did=");
     if( p_start==NULL )
         return 1;
     p_start = p_start+strlen("did=");
@@ -226,7 +222,7 @@ int32 Http_getdomain_port( uint8 *Http_recevieBuf,int8 *domain,int32 *port )
     int8 *p_end =NULL;
     int8 Temp_port[10]={0};
     memset( domain,0,100 );
-    p_start = strstr( Http_recevieBuf,"host=");
+    p_start = strstr( (char *)Http_recevieBuf,"host=");
     if( p_start==NULL ) return 1;
     p_start = p_start+strlen("host=");
     p_end = strstr(p_start,"&");
@@ -250,10 +246,10 @@ int32 Http_getdomain_port( uint8 *Http_recevieBuf,int8 *domain,int32 *port )
  *
  ********************************************************/
 int32 Http_GetTarget( const int8 *host, 
-                      const uint8 *product_key, 
-                      const uint8 *did,enum OTATYPE_T type,
-                      const uint8 *hard_version, 
-                      const uint8 *soft_version,
+                      const int8 *product_key, 
+                      const int8 *did,enum OTATYPE_T type,
+                      const int8 *hard_version, 
+                      const int8 *soft_version,
                       const int32 current_fid,int32 socketid )
 {
     //int8 getBuf[500] = {0};
@@ -299,10 +295,10 @@ int32 Http_GetTarget( const int8 *host,
  *   Add by Alex lin  --2014-10-29
  *
  ********************************************************/
-int32 HTTP_DoGetTargetId(enum OTATYPE_T type,const int8 *host,int8 *szDID,uint8 *szPK,uint8 *szHver,
-                         uint8 *szSver,int32 socketid )
+int32 HTTP_DoGetTargetId(enum OTATYPE_T type,const int8 *host,int8 *szDID,int8 *szPK,int8 *szHver,
+                         int8 *szSver,int32 socketid )
 {
-    int32 ret=0, otatype, targetid = 1;
+    int32 ret=0;
     int32 temp_fid=0;
  
     ret = Http_GetTarget( host,szPK,szDID,type,szHver,szSver,temp_fid,socketid );
@@ -318,13 +314,13 @@ int32 HTTP_DoGetTargetId(enum OTATYPE_T type,const int8 *host,int8 *szDID,uint8 
  *   Add by Alex lin  --2014-10-29
  *
  ********************************************************/
-int32 Http_GetFid_Url( int32 *target_fid,int8 *download_url, int8 *fwver, int8 *buf )
+int32 Http_GetFid_Url( int32 *target_fid,int8 *download_url, int8 *fwver, uint8 *buf )
 {
     int8 *p_start = NULL;
     int8 *p_end =NULL;
     int8 fid[10]={0};
     int16 fwverlen = 0;
-    p_start = strstr( buf,"target_fid=");
+    p_start = strstr( (char *)buf,"target_fid=");
     if( p_start==NULL )  return 1;
     p_start =  p_start+(sizeof( "target_fid=" )-1);
 
@@ -422,7 +418,6 @@ int32 Http_JD_Post_Feed_Key_req( int32 socketid,int8 *feed_id,int8 *access_key,i
     int8 Content[200]={0};
     int32 ContentLen=0;
     int32 totalLen=0;
-    int8 *contentType="application/x-www-form-urlencoded";
     
     if(strlen(DId)<=0)
         return 1;
@@ -433,7 +428,7 @@ int32 Http_JD_Post_Feed_Key_req( int32 socketid,int8 *feed_id,int8 *access_key,i
     sprintf(Content,"feed_id=%s&access_key=%s",feed_id,access_key);
     ContentLen = strlen( Content );
 
-    snprintf( postBuf,400,"%s%s%s%s%s%s%s%s%s%s%s%s%s%d%s%s%s",
+    snprintf( (char *)postBuf,400,"%s%s%s%s%s%s%s%s%s%s%s%s%s%d%s%s%s",
               "POST ",url,DId," HTTP/1.1",kCRLFNewLine,
               "Host: ",host,kCRLFNewLine,
               "Cache-Control: no-cache",kCRLFNewLine,
@@ -441,7 +436,7 @@ int32 Http_JD_Post_Feed_Key_req( int32 socketid,int8 *feed_id,int8 *access_key,i
               "Content-Length: ",ContentLen,kCRLFLineEnding,
               Content,kCRLFLineEnding                           
         );
-    totalLen = strlen( postBuf );
+    totalLen = strlen( (char *)postBuf );
     ret = send( socketid,postBuf,totalLen,0 );
     
     free( postBuf );    
@@ -511,7 +506,6 @@ int32 Http_HeadLen( int8 *httpbuf )
 {
    int8 *p_start = NULL;
    int8 *p_end =NULL;
-   int8 temp;
    int32 headlen=0;
    p_start = httpbuf;
    p_end = strstr( httpbuf,kCRLFLineEnding);
@@ -536,7 +530,6 @@ int32 Http_BodyLen( int8 *httpbuf )
 {
    int8 *p_start = NULL;
    int8 *p_end =NULL;
-   int8 temp;
    int8 bodyLenbuf[10]={0};
    int32 bodylen=0;  //Content-Length: 
    p_start = strstr( httpbuf,"Content-Length: ");
@@ -634,7 +627,7 @@ uint8 Http_Get3rdCloudInfo( int8 *szCloud3Name,int8 *szCloud3Info,uint8 *buf )
     memset( szCloud3Name,0,10 );
     memset( szCloud3Info,0,32 );
     
-    p_start = strstr( buf,cloudName );
+    p_start = strstr( (char *)buf,cloudName );
     if( p_start==NULL )
         return 0;
     p_start+=strlen( cloudName );

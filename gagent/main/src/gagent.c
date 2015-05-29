@@ -1,8 +1,6 @@
 #include "gagent.h"
-/*
-GAGENT_CONFIG_S g_stGAgentConfigData;
-XPG_GLOBALVAR g_globalvar;
-*/
+#include "lan.h"
+
 pgcontext pgContextData=NULL;
 void GAgent_NewVar( pgcontext *pgc );
 
@@ -17,7 +15,7 @@ void GAgent_Init( pgcontext *pgc )
 {
     GAgent_DevInit( *pgc );
     GAgent_NewVar( pgc );
-    GAgent_logevelSet( /*GAGENT_DEBUG*/ GAGENT_WARNING );
+    GAgent_logevelSet( /*GAGENT_DUMP*/GAGENT_WARNING );
 
     GAgent_VarInit( pgc );
     GAgent_LocalInit( *pgc );
@@ -58,23 +56,6 @@ void GAgent_VarInit( pgcontext *pgc )
     int totalCap = BUF_LEN + BUF_HEADLEN;
     int bufCap = BUF_LEN;
     (*pgc)->rtinfo.firstStartUp = 1;
-    (*pgc)->rtinfo.Txbuf = (ppacket)malloc( sizeof(packet) );
-    while( (*pgc)->rtinfo.Txbuf == NULL )
-    {
-        (*pgc)->rtinfo.Txbuf = (ppacket)malloc( sizeof(packet));
-        sleep(1);
-    }
-    (*pgc)->rtinfo.Txbuf->allbuf = (uint8 *)malloc( totalCap );
-    while( (*pgc)->rtinfo.Txbuf->allbuf==NULL )
-    {
-        (*pgc)->rtinfo.Txbuf->allbuf = (uint8 *)malloc( totalCap );
-        sleep(1);
-    }
-    memset( (*pgc)->rtinfo.Txbuf->allbuf,0,totalCap );
-    (*pgc)->rtinfo.Txbuf->totalcap = totalCap;
-    (*pgc)->rtinfo.Txbuf->bufcap = bufCap;
-    resetPacket( (*pgc)->rtinfo.Txbuf );
-
     (*pgc)->rtinfo.Rxbuf = (ppacket)malloc( sizeof(packet) );
     (*pgc)->rtinfo.Rxbuf->allbuf = (uint8 *)malloc( totalCap );
     while( (*pgc)->rtinfo.Rxbuf->allbuf==NULL )
@@ -86,7 +67,6 @@ void GAgent_VarInit( pgcontext *pgc )
     (*pgc)->rtinfo.Rxbuf->totalcap = totalCap;
     (*pgc)->rtinfo.Rxbuf->bufcap = bufCap;
     resetPacket( (*pgc)->rtinfo.Rxbuf );
-
 
     /* get config data form flash */
     GAgent_DevGetConfigData( &(*pgc)->gc );
@@ -126,7 +106,6 @@ void GAgent_VarInit( pgcontext *pgc )
         if( strlen( ((*pgc)->gc.old_productkey) )!=(PK_LEN) )
             memset( (*pgc)->gc.old_productkey,0,PK_LEN + 1 );
 
-
         if( strlen( (*pgc)->gc.m2m_ip)>IP_LEN_MAX || strlen( (*pgc)->gc.m2m_ip)<IP_LEN_MIN )
             memset( (*pgc)->gc.m2m_ip,0,IP_LEN_MAX + 1 );
         
@@ -139,7 +118,7 @@ void GAgent_VarInit( pgcontext *pgc )
     
 
     (*pgc)->rtinfo.waninfo.ReConnectMqttTime = GAGENT_MQTT_TIMEOUT;
-	(*pgc)->rtinfo.waninfo.ReConnectHttpTime = GAGENT_HTTP_TIMEOUT;
+    (*pgc)->rtinfo.waninfo.ReConnectHttpTime = GAGENT_HTTP_TIMEOUT;
     (*pgc)->rtinfo.waninfo.send2HttpLastTime = GAgent_GetDevTime_S();
     (*pgc)->rtinfo.waninfo.firstConnectHttpTime = GAgent_GetDevTime_S();
     (*pgc)->rtinfo.waninfo.httpCloudPingTime = 0;
@@ -258,7 +237,22 @@ int32 GAgent_MaxFd( pgcontext pgc  )
     return maxfd;
 }
 
-
+int32 GAgent_SelectFd(pgcontext pgc,int32 sec,int32 usec )
+{
+    int32 ret=0;
+    int32 select_fd=0;
+    GAgent_AddSelectFD( pgc );
+    select_fd = GAgent_MaxFd( pgc );
+    if( select_fd>0 )
+    {
+        ret = GAgent_select(select_fd+1,&(pgc->rtinfo.readfd),NULL,NULL,sec,usec );
+        if( ret==0 )
+        { 
+            //Time out.
+        }
+    }
+    return ret;
+}
 /****************************************************************
 *       functionName    :   GAgent_SetGServerIP
 *       description     :   set the  Gserver ip into configdata
@@ -367,9 +361,19 @@ int8 GAgent_loglevelenable( uint16 level )
 ****************************************************************/
 void GAgent_RefreshIPTick( pgcontext pgc,uint32 dTime_s )
 {
-    uint32 cTime=0,dTime=0;
-    int8 tmpip[32] = {0},failed=0,ret=0,flag=0;
-    
+    uint32 cTime=0;
+    int8 tmpip[32] = {0},failed=0,ret=0;
+
+    if( ((pgc->rtinfo.GAgentStatus)&WIFI_MODE_TEST) == WIFI_MODE_TEST )
+    {
+        GAgent_Printf( GAGENT_INFO,"In WIFI_MODE_TEST...");
+        return ;
+    }
+    if( ((pgc->rtinfo.GAgentStatus)&WIFI_STATION_CONNECTED)!=WIFI_STATION_CONNECTED )
+    {
+        GAgent_Printf( GAGENT_INFO," not in WIFI_STATION_CONNECTED ");
+        return ;
+    }
     pgc->rtinfo.waninfo.RefreshIPLastTime+=dTime_s;
     if( (pgc->rtinfo.waninfo.RefreshIPLastTime) >= (pgc->rtinfo.waninfo.RefreshIPTime) )
     {
@@ -452,7 +456,7 @@ void GAgent_RefreshIPTick( pgcontext pgc,uint32 dTime_s )
  *   Add by Alex lin  --2014-12-19
  *
  ********************************************************/
-void GAgent_UpdateInfo( pgcontext pgc,int8 *new_pk )
+void GAgent_UpdateInfo( pgcontext pgc,uint8 *new_pk )
 {
     GAgent_Printf(GAGENT_DEBUG,"a new productkey is :%s.",new_pk);
     /*the necessary information to disable devices*/
@@ -479,7 +483,7 @@ void GAgent_UpdateInfo( pgcontext pgc,int8 *new_pk )
 }
 /******************************************************
  *      FUNCTION        :   uGAgent_Config
- *      new_pk          :   new productkey
+ *      typed           :   1:AP MODE 2:Airlink
  *   Add by Alex lin  --2014-12-19
  *
  ********************************************************/
@@ -490,30 +494,85 @@ void GAgent_Config( uint8 typed,pgcontext pgc )
         //AP MODE
         case 1:
             GAgent_DRV_WiFi_SoftAPModeStart( AP_NAME, AP_PASSWORD, WIFI_MODE_AP );
-        break;
-        
+        break;        
         //Airlink
         case 2:
         {
-            int8 timeout ;
-            timeout = 10;
-            GAgent_OpenAirlink( timeout/* timeout */ );
+            int8 timeout;
+            uint16 tempWiFiStatus;
+            timeout = 60;
+
+            tempWiFiStatus = pgc->rtinfo.GAgentStatus;
+            pgc->gc.flag  &=~ XPG_CFG_FLAG_CONFIG;
+            GAgent_DevLED_Green( 1 );
+            GAgent_OpenAirlink( timeout );
+            GAgent_Printf( GAGENT_INFO,"OpenAirlink...");
             while( timeout )
             {
                 timeout--;
                 sleep(1);
-                if( pgc->gc.flag & XPG_CFG_FLAG_CONFIG ==XPG_CFG_FLAG_CONFIG )
+                if( (pgc->gc.flag & XPG_CFG_FLAG_CONFIG) ==XPG_CFG_FLAG_CONFIG )
                 {    
-                    GAgent_DRVSetWiFiStartMode( pgc,WIFI_MODE_STATION );
-                    GAgent_DevSaveConfigData( &(pgc->gc) );  
+                    GAgent_Printf( GAGENT_INFO,"AirLink result ssid:%s key:%s",pgc->gc.wifi_ssid,pgc->gc.wifi_key );
+                    tempWiFiStatus |=WIFI_MODE_STATION;
+                    GAgent_DevSaveConfigData( &(pgc->gc) );
+                    tempWiFiStatus |= GAgent_DRVWiFi_StationCustomModeStart( pgc->gc.wifi_ssid,pgc->gc.wifi_key,tempWiFiStatus );  
+                    CreateUDPBroadCastServer( pgc );
                     break;
                 }
-            }      
+                GAgent_DevLED_Red( (timeout%2) );
+            }
+            GAgent_Printf( GAGENT_INFO,"AirLink Timeout ...");
         break;
         }
         default :
         break;
     }
+}
+uint8 GAgent_EnterTest( pgcontext pgc )
+{
+    pgc->rtinfo.scanWifiFlag = 0;
+    memset( pgc->gc.GServer_ip,0,IP_LEN_MAX+1);
+    memset( pgc->gc.m2m_ip,0,IP_LEN_MAX+1);
+
+    GAgent_DevSaveConfigData( &(pgc->gc) );
+    GAgent_SetWiFiStatus( pgc,WIFI_MODE_TEST,1 );
+    GAgent_DRVWiFiStartScan();
+    return 0;
+}
+uint8 GAgent_ExitTest( pgcontext pgc )
+{
+    pgc->rtinfo.scanWifiFlag = 0;
+    GAgent_DRVWiFi_StationDisconnect();
+    GAgent_SetWiFiStatus( pgc,WIFI_MODE_TEST,0 );
+    GAgent_DRVWiFiStopScan( );
+    return 0;
+}
+/****************************************************************
+FunctionName        :   GAgent_GetStaWiFiLevel
+Description         :   return the wifi level in Sta mode.
+wifiRSSI            :   the wifi signal strength(0-100)
+return              :   0-7(0:min,7:max)
+Add by Alex.lin     --2015-05-26
+****************************************************************/
+int8 GAgent_GetStaWiFiLevel( int8 wifiRSSI )
+{
+    if( wifiRSSI==WIFI_LEVEL_0)
+        return 0;
+    if( (wifiRSSI>WIFI_LEVEL_0)&&(wifiRSSI<WIFI_LEVEL_1))
+        return 1;
+    if( (wifiRSSI>=WIFI_LEVEL_1)&&(wifiRSSI<WIFI_LEVEL_2))
+        return 2;    
+    if( (wifiRSSI>=WIFI_LEVEL_2)&&(wifiRSSI<WIFI_LEVEL_3))
+        return 3;
+    if( (wifiRSSI>=WIFI_LEVEL_3)&&(wifiRSSI<WIFI_LEVEL_4))
+        return 4;
+    if( (wifiRSSI>=WIFI_LEVEL_4)&&(wifiRSSI<WIFI_LEVEL_5))
+        return 5;
+    if( (wifiRSSI>=WIFI_LEVEL_5)&&(wifiRSSI<WIFI_LEVEL_6))
+        return 6;
+    if( wifiRSSI>=WIFI_LEVEL_6 )
+        return 7;
 }
 /****************************************************************
 *       FunctionName      :     GAgent_BaseTick
@@ -548,6 +607,7 @@ uint32 GAgent_BaseTick()
     }
     return dTime;
 }
+
 /****************************************************************
 *       FunctionName      :     GAgent_Tick
 *       Description       :     GAgent runing Tick.
