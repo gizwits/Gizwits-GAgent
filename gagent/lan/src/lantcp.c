@@ -1,5 +1,7 @@
 #include "gagent.h"
 #include "lan.h"
+#include "mqttlib.h"
+#include "utils.h"
 
 /****************************************************************
         FunctionName        :   Lan_setClientTimeOut.
@@ -64,7 +66,7 @@ int32 Lan_TcpServerHandler(pgcontext pgc)
     if(FD_ISSET(pgc->ls.tcpServerFd, &(pgc->rtinfo.readfd)))
     {
         /* if nonblock, can be done in accept progress */
-        newfd = Socket_accept(pgc->ls.tcpServerFd, &addr, &addrLen);
+        newfd = Socket_accept(pgc->ls.tcpServerFd, &addr, (socklen_t *)&addrLen);
         if(newfd > 0)
         {
             GAgent_Printf(GAGENT_DEBUG, "detected new client as %d", newfd);
@@ -89,7 +91,7 @@ int32 LAN_readPacket(int32 fd, ppacket pbuf, int32 bufLen)
 }
 
 int32 Lan_tcpClientDataHandle(pgcontext pgc, uint32 channel, 
-                ppacket prxBuf, ppacket ptxBuf, int32 buflen)
+                ppacket prxBuf,/* ppacket ptxBuf,*/ int32 buflen)
 {
     int32 fd = pgc->ls.tcpClient[channel].fd;
     int32 recDataLen =0;
@@ -120,7 +122,7 @@ int32 Lan_tcpClientDataHandle(pgcontext pgc, uint32 channel,
     }
 
     Lan_setClientTimeOut(pgc, channel);
-    return Lan_dispatchTCPData(pgc, prxBuf, ptxBuf, channel);
+    return Lan_dispatchTCPData(pgc, prxBuf,/* ptxBuf,*/ channel);
 }
 
 /****************************************************************
@@ -149,16 +151,12 @@ static uint32 Lan_checkAuthorization( pgcontext pgc,  int clientIndex)
         Description         :      Lan Tcp logining.
         Add by Will.zhou     --2015-03-10
 ****************************************************************/
-static void Lan_handleLogin( pgcontext pgc, ppacket src, ppacket dest, int clientIndex)
+static void Lan_handleLogin( pgcontext pgc, ppacket src, int clientIndex)
 {
-    int i;
-    int ret;
     int32 fd;
     uint8 isLogin;
     uint8 *pbuf;
 
-    resetPacket( dest );
-    pbuf = dest->phead;
     fd = pgc->ls.tcpClient[clientIndex].fd;
 
     /* verify passcode */
@@ -180,6 +178,9 @@ static void Lan_handleLogin( pgcontext pgc, ppacket src, ppacket dest, int clien
        
         GAgent_Printf(GAGENT_INFO, "expected passcode:%s", pgc->gc.wifipasscode);
     }
+    
+    resetPacket( src );
+    pbuf = src->phead;
     /* protocol version */
      pbuf[0] = 0x00;
      pbuf[1] = 0x00;
@@ -284,15 +285,15 @@ void GAgent_Lan_SendDevInfo(pgcontext pgc,ppacket pTxBuf,int32 clientIndex)
 {
     varc sendvarc;
     uint32 dataLen;
-	uint16 wifi_firmware_ver_len;
+    uint16 wifi_firmware_ver_len;
     int i;
-	int offset=0;
-    
+    int offset=0;
+
     /* protocol */
     *(uint32 *)pTxBuf->phead = htonl(GAGENT_PROTOCOL_VERSION);
-	offset += LAN_PROTOCOL_HEAD_LEN;
+    offset += LAN_PROTOCOL_HEAD_LEN;
     /* varLen */
-	/* flag(1B) | cmd(2B) | p0(116B)  */
+    /* flag(1B) | cmd(2B) | p0(116B)  */
     dataLen = 1+2+116;
     sendvarc = Tran2varc(dataLen);  
     for(i=0;i<sendvarc.varcbty;i++)
@@ -302,59 +303,59 @@ void GAgent_Lan_SendDevInfo(pgcontext pgc,ppacket pTxBuf,int32 clientIndex)
     }
     /* flag */
     pTxBuf->phead[offset] = 0x00;
-	offset +=1;
+    offset +=1;
     /* cmd */
     pTxBuf->phead[offset] = 0x00;
-	pTxBuf->phead[offset+1] = 0x14;
-	offset +=2;
-	/* wifi_hard_ver */
-	strcpy( pTxBuf->phead+offset,WIFI_HARDVER);
-	offset +=8;
-	/* wifi_soft_ver */
-	strcpy( pTxBuf->phead+offset,WIFI_SOFTVAR);
-	offset +=8;
-	/* mcu_hard_ver */
-	for(i=0;i<8;i++)
-		pTxBuf->phead[offset+i]=pgc->mcu.hard_ver[i];
-	offset +=8;
-	/* mcu_soft_ver */
-	for(i=0;i<8;i++)
-		pTxBuf->phead[offset+i]=pgc->mcu.soft_ver[i];
-	offset +=8;
-	/* protocol version of payload */
-	for(i=0;i<8;i++)
-		pTxBuf->phead[offset+i]=pgc->mcu.p0_ver[i];
-	offset +=8;
-	/* wifi_firmware_id */
-	for(i=0;i<8;i++)
-		 pTxBuf->phead[offset+i]=0;
-	offset +=8;
-	/* wifi_firmware_ver_len */
-	wifi_firmware_ver_len = pgc->gc.FirmwareVerLen[1] | (pgc->gc.FirmwareVerLen[0] << 8);
-	if(wifi_firmware_ver_len > FIRMWARE_LEN_MAX)
-	{
-		wifi_firmware_ver_len = FIRMWARE_LEN_MAX;	
-		pgc->gc.FirmwareVer[FIRMWARE_LEN_MAX - 1] = 0;
-	}
-	*(uint16 *)(pTxBuf->phead + offset) = htons(wifi_firmware_ver_len);
-	offset +=2;
-	/* wifi_firmware_ver */
-	for(i = 0;i < wifi_firmware_ver_len;i++)
-	 	pTxBuf->phead[offset+i]=pgc->gc.FirmwareVerLen[i];
-	offset +=wifi_firmware_ver_len;	
-	/* produckt_key_len */
-	*(uint16 *)(pTxBuf->phead + offset) = htons(32);
-	 offset +=2;
-	/* produckt_key */
-	for(i=0;i<32;i++)
-		 pTxBuf->phead[offset+i]=pgc->mcu.product_key[i];
-	offset +=32;
+    pTxBuf->phead[offset+1] = 0x14;
+    offset +=2;
+    /* wifi_hard_ver */
+    strcpy( (char *)pTxBuf->phead+offset,WIFI_HARDVER);
+    offset +=8;
+    /* wifi_soft_ver */
+    strcpy( (char *)pTxBuf->phead+offset,WIFI_SOFTVAR);
+    offset +=8;
+    /* mcu_hard_ver */
+    for(i=0;i<8;i++)
+        pTxBuf->phead[offset+i]=pgc->mcu.hard_ver[i];
+    offset +=8;
+    /* mcu_soft_ver */
+    for(i=0;i<8;i++)
+        pTxBuf->phead[offset+i]=pgc->mcu.soft_ver[i];
+    offset +=8;
+    /* protocol version of payload */
+    for(i=0;i<8;i++)
+        pTxBuf->phead[offset+i]=pgc->mcu.p0_ver[i];
+    offset +=8;
+    /* wifi_firmware_id */
+    for(i=0;i<8;i++)
+         pTxBuf->phead[offset+i]=0;
+    offset +=8;
+    /* wifi_firmware_ver_len */
+    wifi_firmware_ver_len = pgc->gc.FirmwareVerLen[1] | (pgc->gc.FirmwareVerLen[0] << 8);
+    if(wifi_firmware_ver_len > FIRMWARE_LEN_MAX)
+    {
+        wifi_firmware_ver_len = FIRMWARE_LEN_MAX;	
+        pgc->gc.FirmwareVer[FIRMWARE_LEN_MAX - 1] = 0;
+    }
+    *(uint16 *)(pTxBuf->phead + offset) = htons(wifi_firmware_ver_len);
+    offset +=2;
+    /* wifi_firmware_ver */
+    for(i = 0;i < wifi_firmware_ver_len;i++)
+        pTxBuf->phead[offset+i]=pgc->gc.FirmwareVerLen[i];
+    offset +=wifi_firmware_ver_len;	
+    /* produckt_key_len */
+    *(uint16 *)(pTxBuf->phead + offset) = htons(32);
+     offset +=2;
+    /* produckt_key */
+    for(i=0;i<32;i++)
+         pTxBuf->phead[offset+i]=pgc->mcu.product_key[i];
+    offset +=32;
 
     if(pgc->ls.tcpClient[clientIndex].fd > 0 )
-    {				
+    {
         send(pgc->ls.tcpClient[clientIndex].fd, pTxBuf->phead,offset, 0); 
     }
-}      
+}
 
 /****************************************************************
         FunctionName        :   Lan_AckHeartbeak.
@@ -418,25 +419,25 @@ void Local_Ack2TcpClient(pgcontext pgc, uint32 channel)
         Description         :   parse and dispatch tcp cmd message.
         Add by Will.zhou     --2015-03-10
 ****************************************************************/
-int32 Lan_dispatchTCPData(pgcontext pgc, ppacket prxBuf, ppacket ptxBuf, int32 clientIndex)
+int32 Lan_dispatchTCPData(pgcontext pgc, ppacket prxBuf,/* ppacket ptxBuf,*/ int32 clientIndex)
 {
-    int datalen;
     int ret = 0;
     uint16 cmd;
     int32 bytesOfLen;
     int len;
 
     bytesOfLen = mqtt_num_rem_len_bytes(prxBuf->phead + 3);
+    if(bytesOfLen<1 || bytesOfLen>4)
+    {
+         return 0;
+    }
     len = mqtt_parse_rem_len(prxBuf->phead + 3);
 
     cmd = *(uint16 *)(prxBuf->phead + LAN_PROTOCOL_HEAD_LEN + LAN_PROTOCOL_FLAG_LEN
                         + bytesOfLen);
     cmd = ntohs(cmd);
-    prxBuf->type = SetPacketType( prxBuf->type,LAN_TCP_DATA_IN,1 );
-    ret = ParsePacket(prxBuf);
-    
     if((cmd != GAGENT_LAN_CMD_BINDING) && (cmd != GAGENT_LAN_CMD_LOGIN)
-		&& (cmd != GAGENT_LAN_CMD_INFO))
+        && (cmd != GAGENT_LAN_CMD_INFO))
     {
         ret = Lan_checkAuthorization(pgc, clientIndex);
         if(0 == ret)
@@ -448,18 +449,22 @@ int32 Lan_dispatchTCPData(pgcontext pgc, ppacket prxBuf, ppacket ptxBuf, int32 c
     switch (cmd)
     {
         case GAGENT_LAN_CMD_BINDING:
-            Lan_handlePasscode(pgc, ptxBuf, clientIndex);
+            Lan_handlePasscode( pgc, prxBuf, clientIndex );
             break;
         case GAGENT_LAN_CMD_LOGIN:
-            Lan_handleLogin(pgc, prxBuf, ptxBuf, clientIndex);
+            Lan_handleLogin( pgc, prxBuf,clientIndex );
             break;
         case GAGENT_LAN_CMD_TRANSMIT:
-            prxBuf->type = SetPacketType( prxBuf->type, LAN_TCP_DATA_IN, 0 );
-            prxBuf->type = SetPacketType( ptxBuf->type, LOCAL_DATA_OUT, 1 );
+            prxBuf->type = SetPacketType( prxBuf->type,LAN_TCP_DATA_IN,1 );
+            ParsePacket(prxBuf);
             if((prxBuf->pend - prxBuf->ppayload) > 0)
+            {
                ret = prxBuf->pend - prxBuf->ppayload;
+            }
             else
+            {
                ret = 0;
+            }
             break;
         case GAGENT_LAN_CMD_HOSTPOTS:
             /* 
@@ -469,12 +474,13 @@ int32 Lan_dispatchTCPData(pgcontext pgc, ppacket prxBuf, ppacket ptxBuf, int32 c
         case GAGENT_LAN_CMD_LOG:
             break;
         case GAGENT_LAN_CMD_INFO:
-    		resetPacket(ptxBuf);
-    		GAgent_Lan_SendDevInfo(pgc, ptxBuf, clientIndex);
+            resetPacket(prxBuf);
+            GAgent_Lan_SendDevInfo(pgc, prxBuf, clientIndex);
             break;
         case GAGENT_LAN_CMD_TICK:
+            resetPacket(prxBuf);
             GAgent_Printf(GAGENT_WARNING,"LAN TCP heartbeat...");
-            Lan_AckHeartbeak(pgc, ptxBuf, clientIndex);
+            Lan_AckHeartbeak(pgc, prxBuf, clientIndex);
             break;
         case GAGENT_LAN_CMD_TEST:
             Local_Ack2TcpClient( pgc,clientIndex);

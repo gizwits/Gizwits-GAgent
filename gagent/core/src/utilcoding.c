@@ -1,5 +1,6 @@
 #include "gagent.h"
 #include "lan.h"
+#include "mqttlib.h"
 static uint8 g_SN;
 
 void make_rand(int8* data)
@@ -20,7 +21,7 @@ void make_rand(int8* data)
 // 返回长度
 int encodevarlen(int data, u8* buf)
 {
-    int l = 0, b = 0, ret = 0;
+    int l = 0;
     do
     {
         buf[l] = data % 128;
@@ -223,16 +224,12 @@ uint32 ParsePacket( ppacket pRxBuf )
 {
     int32 varlen=0;
     int32 datalen=0;
-    uint8* pHead=NULL;
-    int32 ret=0;
-
     uint16 cmd=0;
     uint16 *pcmd=NULL;
     GAgent_Printf(GAGENT_DEBUG,"\r\n");
     GAgent_Printf(GAGENT_DEBUG,"IN %s packet type : %04x",__FUNCTION__ ,pRxBuf->type );
     if( ((pRxBuf->type)&(CLOUD_DATA_IN)) == CLOUD_DATA_IN )
     {
-
         datalen = mqtt_parse_rem_len( pRxBuf->phead+3 ); 
         varlen = mqtt_num_rem_len_bytes( pRxBuf->phead+3 );
         

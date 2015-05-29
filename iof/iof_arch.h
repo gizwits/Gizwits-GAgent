@@ -27,15 +27,22 @@ int8 GAgent_DRVSetWiFiStartMode( pgcontext pgc,uint32 mode );
 int16 GAgent_DRV_WiFi_SoftAPModeStart( const int8* ap_name,const int8 *ap_password,int16 wifiStatus );
 int16 GAgent_DRVWiFi_StationCustomModeStart(int8 *StaSsid,int8 *StaPass,uint16 wifiStatus );
 int16 GAgent_DRVWiFi_StationDisconnect();
+void GAgent_DRVWiFi_APModeStop( pgcontext pgc );
 void GAgent_DRVWiFiStartScan( );
 void GAgent_DRVWiFiStopScan( );
 NetHostList_str *GAgentDRVWiFiScanResult( NetHostList_str *aplist );
+void GAgent_DRVWiFiPowerScan( pgcontext pgc );
+int8 GAgent_DRVWiFiPowerScanResult( pgcontext pgc );
 /*********Net socket function************/
 uint32 GAgent_GetHostByName( int8 *domain, int8 *IPAddress );
 int32  GAgent_accept( int32 sockfd );
 int32  GAgent_listen( int32 sockfd, int32 backlog );
 uint32 GAgent_sendto( int32  sockfd,  const  void  *buf, int32 len,  int32 flags );
+int32 GAgent_select(int32 nfds, fd_set *readfds, fd_set *writefds,
+           fd_set *exceptfds,int32 sec,int32 usec );
 int32 GAgent_CreateTcpServer( uint16 tcp_port );
+int32 GAgent_CreateUDPServer( uint16 udp_port );
+int32 GAgent_CreateUDPBroadCastServer( uint16 udpbroadcast_port, struct sockaddr_t *sockaddr);
 
                 
 /****************************************************************

@@ -1,5 +1,5 @@
 #include "gagent.h"
-
+#include "lan.h"
 
 int32 handleWebConfig( pgcontext pgc,int32 fd)
 {
@@ -49,7 +49,7 @@ int32 handleWebConfig( pgcontext pgc,int32 fd)
                  "Content-Length: %d\r\n"
                  "Cache-Control: no-cache\r\n"
                  "Connection: close\r\n\r\n",
-                 strlen(buf_body));
+                 (int)strlen(buf_body));
         
         send(fd, buf_head, strlen(buf_head), 0);
         send(fd, buf_body, strlen(buf_body), 0);
@@ -95,7 +95,7 @@ int32 handleWebConfig( pgcontext pgc,int32 fd)
                      "Content-Length: %d\r\n"
                      "Cache-Control: no-cache\r\n"
                      "Connection: close\r\n\r\n",
-                     strlen(buf_body));
+                     (int)strlen(buf_body));
 
             send(fd, buf_head, strlen(buf_head), 0);
             send(fd, buf_body, strlen(buf_body), 0);   
@@ -149,11 +149,12 @@ void GAgent_DoTcpWebConfig( pgcontext pgc )
         GAgent_Printf( GAGENT_DEBUG,"Creat Tcp Web Server." );
         pgc->ls.tcpWebConfigFd = GAgent_CreateWebConfigServer( 80 );   
     }
-
+    if( pgc->ls.tcpWebConfigFd<0 )
+        return ;
     if(FD_ISSET(pgc->ls.tcpWebConfigFd, &(pgc->rtinfo.readfd)))
     {
         /* if nonblock, can be done in accept progress */
-        newfd = Socket_accept(pgc->ls.tcpWebConfigFd, &addr, &addrLen);
+        newfd = Socket_accept(pgc->ls.tcpWebConfigFd, &addr, (socklen_t *)&addrLen);
         if(newfd > 0)
         {
             Lan_AddTcpNewClient(pgc, newfd, &addr);

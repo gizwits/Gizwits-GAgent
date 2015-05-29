@@ -1,0 +1,16 @@
+04010004版本changelog:
+1.修改Makfile支持模块/特性可剪裁.LOCAL模块可裁剪,LAN模块可裁剪.
+2.修复http创建成功之后连接失败没有关闭socket的bug.
+3.修复MCU通知GAgent进入产测之后导致段错误.
+4.修复配置文件权限导致app不能绑定的bug.
+5.优化wifi事件处理,集中到GAgent_WiFiEventTick( ).
+6.修改扫描热点类别结构体名称.
+7.修复FD_ISSET() fd<0 的bug.
+8.修复进入Airlink代码逻辑错误.
+9.优化GAgent上电流程( OTA放到provision之后 )
+10.功能添加,获取GAgent所连接热点的信号强度接口.
+11.优化全局变量,废弃全局rtinfo.Txbuf 变量,只使用rtinfo.Rxbuf.
+12.功能添加,加GAgent定时向云端同步时间.
+13.优化local带P0的ACK函数.
+14.修复串口对 "0xFF 0x55"处理的问题
+15.GAgent警告信息处理.

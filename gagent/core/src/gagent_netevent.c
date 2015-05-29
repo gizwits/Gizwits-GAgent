@@ -1,25 +1,24 @@
 #include "gagent.h"
 #include "cloud.h"
+#include "platform.h"
 
 void GAgent_WiFiInit( pgcontext pgc )
 {
-    int8 ret=0;
-    //strcpy( pgc->gc.wifi_ssid,SSID );
-    //strcpy( pgc->gc.wifi_key,KEY );
-    ret = GAgent_DRVGetWiFiMode(pgc);
+    uint16 tempWiFiStatus=0;
+    tempWiFiStatus = pgc->rtinfo.GAgentStatus;
+    GAgent_DRVGetWiFiMode(pgc);
     if( ((pgc->gc.flag)&XPG_CFG_FLAG_CONNECTED) == XPG_CFG_FLAG_CONNECTED )
     {
         GAgent_Printf( GAGENT_INFO,"In Station mode");
         GAgent_Printf( GAGENT_INFO,"SSID:%s,KEY:%s",pgc->gc.wifi_ssid,pgc->gc.wifi_key );
-        pgc->rtinfo.GAgentStatus |=WIFI_MODE_STATION;
-        pgc->rtinfo.GAgentStatus |= GAgent_DRVWiFi_StationCustomModeStart( pgc->gc.wifi_ssid,pgc->gc.wifi_key,pgc->rtinfo.GAgentStatus );
+        tempWiFiStatus |=WIFI_MODE_STATION;
+        tempWiFiStatus |= GAgent_DRVWiFi_StationCustomModeStart( pgc->gc.wifi_ssid,pgc->gc.wifi_key, tempWiFiStatus );
     }
     else
     {
         GAgent_Printf( GAGENT_CRITICAL,"In AP mode");
-        pgc->rtinfo.GAgentStatus |=WIFI_MODE_AP;
-        pgc->rtinfo.GAgentStatus |= GAgent_DRV_WiFi_SoftAPModeStart( pgc->minfo.ap_name,AP_PASSWORD,pgc->rtinfo.GAgentStatus );
-        
+        tempWiFiStatus |=WIFI_MODE_AP;
+        tempWiFiStatus |= GAgent_DRV_WiFi_SoftAPModeStart( pgc->minfo.ap_name,AP_PASSWORD,tempWiFiStatus );
     }
 }
 void GAgentSetLedStatus( uint16 gagentWiFiStatus )
@@ -101,18 +100,16 @@ Add by Alex.lin         --2015-05-06
 ****************************************************************/
 uint8 GAgentFindTestApHost( NetHostList_str *pAplist )
 {
-    int8 i=0,apNum=0,ret=0;
+    int16 i=0;
+    int8 apNum=0,ret=0;
 
-
-    if( pAplist->ApNum <= 0 )
-        return 0;
     for( i=0;i<pAplist->ApNum;i++ )
     {
-        if( 0==memcmp(pAplist->ApList[i].ssid,GAGENT_TEST_AP1,strlen(GAGENT_TEST_AP1)) )
+        if( 0==memcmp(pAplist->ApList[i].ssid,(int8 *)GAGENT_TEST_AP1,strlen(GAGENT_TEST_AP1)) )
         {
             apNum=1;
         }
-        if( 0==memcmp(pAplist->ApList[i].ssid,GAGENT_TEST_AP2,strlen(GAGENT_TEST_AP2)) )
+        if( 0==memcmp(pAplist->ApList[i].ssid,(int8 *)GAGENT_TEST_AP2,strlen(GAGENT_TEST_AP2)) )
         {
             /* 两个热点都能找到 */
             if( 1==apNum)
@@ -141,6 +138,10 @@ uint8 GAgentFindTestApHost( NetHostList_str *pAplist )
         ret =0;
         break;
     }
+
+    if(NULL !=  pAplist->ApList)
+            free( pAplist->ApList); 
+            
     return ret;
 }
 void  GAgent_WiFiEventTick( pgcontext pgc,uint32 dTime_s )
@@ -149,7 +150,8 @@ void  GAgent_WiFiEventTick( pgcontext pgc,uint32 dTime_s )
     uint16 gagentWiFiStatus=0;
 
     gagentWiFiStatus = ( (pgc->rtinfo.GAgentStatus)&(LOCAL_GAGENTSTATUS_MASK) ) ;
-    newStatus = GAgent_DevCheckWifiStatus( pgc->rtinfo.GAgentStatus );
+    newStatus = GAgent_DevCheckWifiStatus( 0xffff /*pgc->rtinfo.GAgentStatus*/ );
+    GAgent_Printf( GAGENT_INFO,"wifiStatus : %04x new:%04x", gagentWiFiStatus,newStatus );
     if( (gagentWiFiStatus&WIFI_MODE_AP) != (newStatus&WIFI_MODE_AP) )
     {
         if( newStatus&WIFI_MODE_AP )
@@ -205,7 +207,12 @@ void  GAgent_WiFiEventTick( pgcontext pgc,uint32 dTime_s )
     {
         if( newStatus&WIFI_STATION_CONNECTED )
         {
+            if( (gagentWiFiStatus&WIFI_MODE_AP)==WIFI_MODE_AP )
+            {
+                GAgent_DRVWiFi_APModeStop( pgc );
+            }
             //WIFI_STATION_CONNECTED UP
+            GAgent_DRVWiFiPowerScan( pgc );
             GAgent_SetWiFiStatus( pgc,WIFI_STATION_CONNECTED,1 );
         }
         else
@@ -225,6 +232,7 @@ void  GAgent_WiFiEventTick( pgcontext pgc,uint32 dTime_s )
         {
             //WIFI_CLOUD_CONNECTED UP
             GAgent_SetWiFiStatus( pgc,WIFI_CLOUD_CONNECTED,1 );
+            GAgent_DRVWiFiPowerScan( pgc );
         }
         else
         {
@@ -232,40 +240,130 @@ void  GAgent_WiFiEventTick( pgcontext pgc,uint32 dTime_s )
             pgc->rtinfo.waninfo.wanclient_num=0;
             GAgent_SetCloudServerStatus( pgc,MQTT_STATUS_START );
             GAgent_SetWiFiStatus( pgc,WIFI_CLOUD_CONNECTED,0 );
+            
         }
     }
     if( gagentWiFiStatus&WIFI_MODE_TEST )//test mode
     {
         static int8 cnt=0;
         int8 ret =0;
-        NetHostList_str *aplist;
-        pgc->rtinfo.testLastTimeStamp+=dTime_s;
-
-        if( cnt>=18 && 0 == pgc->rtinfo.scanWifiFlag )
+        NetHostList_str *aplist=NULL;
+              
+        if( 0 == pgc->rtinfo.scanWifiFlag )
         {
-            cnt=0;
-            GAgent_SetWiFiStatus( pgc,WIFI_MODE_TEST,0 );
-            GAgent_DRVWiFiStopScan( );
-        }
+        
+            
+            pgc->rtinfo.testLastTimeStamp+=dTime_s;
 
-        if( pgc->rtinfo.testLastTimeStamp >= 10  && 0 == pgc->rtinfo.scanWifiFlag )
-        {
-            cnt++;
-            pgc->rtinfo.testLastTimeStamp = 0;
-            GAgent_DRVWiFiStartScan();
-        }
+            if( cnt>=18 )
+            {
+                cnt=0;
+                GAgent_SetWiFiStatus( pgc,WIFI_MODE_TEST,0 );
+                GAgent_DRVWiFiStopScan( );
+                GAgent_Printf( GAGENT_INFO,"Exit Test Mode...");
+            }
 
-        aplist = GAgentDRVWiFiScanResult( aplist );
-        ret = GAgentFindTestApHost( aplist );
+            if( pgc->rtinfo.testLastTimeStamp >= 10 )
+            {
+                cnt++;
+                pgc->rtinfo.testLastTimeStamp = 0;
+                GAgent_DRVWiFiStartScan();
+                GAgent_Printf( GAGENT_INFO,"IN TEST MODE...");
+            }
+            aplist = GAgentDRVWiFiScanResult( aplist );
+            if( NULL==aplist )
+            {
+                ret = 0;
+            }
+            else
+            {
+                if( aplist->ApNum <= 0 )
+                {
+                    ret = 0;
+                }
+                else
+                {
+                    ret = GAgentFindTestApHost( aplist );
+                }
+            }
+        }
         if( ret>0 )
         {
+             uint16 tempWiFiStatus=0;
              pgc->rtinfo.scanWifiFlag = 1;
              cnt=0;
+             GAgent_DRVWiFiStopScan( );
              if( 1==ret )
-              pgc->rtinfo.GAgentStatus |= GAgent_DRVWiFi_StationCustomModeStart( GAGENT_TEST_AP1,GAGENT_TEST_AP_PASS,pgc->rtinfo.GAgentStatus );
+             {
+                tempWiFiStatus |= GAgent_DRVWiFi_StationCustomModeStart( GAGENT_TEST_AP1,GAGENT_TEST_AP_PASS,pgc->rtinfo.GAgentStatus );
+             }
              else
-              pgc->rtinfo.GAgentStatus |= GAgent_DRVWiFi_StationCustomModeStart( GAGENT_TEST_AP2,GAGENT_TEST_AP_PASS,pgc->rtinfo.GAgentStatus );
+             {
+                tempWiFiStatus |= GAgent_DRVWiFi_StationCustomModeStart( GAGENT_TEST_AP2,GAGENT_TEST_AP_PASS,pgc->rtinfo.GAgentStatus );
+             }
         }
+    }
+    pgc->rtinfo.wifiLastScanTime+=dTime_s;
+    if( gagentWiFiStatus&WIFI_STATION_CONNECTED )
+    {
+        static int8 tempwifiRSSI=0;
+        int8 wifiRSSI=0;
+        uint16 wifiLevel=0;
+        if( pgc->rtinfo.wifiLastScanTime >= GAGENT_STA_SCANTIME )
+        {
+            pgc->rtinfo.wifiLastScanTime=0;
+            GAgent_DRVWiFiPowerScan( pgc );
+            GAgent_Printf( GAGENT_INFO,"start to scan wifi ...");
+        }
+        wifiRSSI = GAgent_DRVWiFiPowerScanResult( pgc );
+        if( abs( wifiRSSI-tempwifiRSSI )>=10 )
+        {
+            tempwifiRSSI = wifiRSSI;
+            wifiLevel = GAgent_GetStaWiFiLevel( wifiRSSI );
+            gagentWiFiStatus =gagentWiFiStatus|(wifiLevel<<8);
+            pgc->rtinfo.GAgentStatus = gagentWiFiStatus;
+            GAgent_Printf( GAGENT_INFO,"SSID power:%d level:%d wifistatus:%04x",wifiRSSI,wifiLevel,gagentWiFiStatus );
+        }
+    }
+    if( gagentWiFiStatus&WIFI_MODE_AP )
+    {
+        NetHostList_str *pAplist=NULL;
+        int32 i=0;
+        if( pgc->rtinfo.wifiLastScanTime >=GAGENT_AP_SCANTIME )
+        {
+            pgc->rtinfo.wifiLastScanTime=0;
+           GAgent_DRVWiFiStartScan( );
+        }
+        pAplist = GAgentDRVWiFiScanResult( pAplist );
+        if( NULL == pAplist )
+        {
+           GAgent_Printf( GAGENT_WARNING,"pAplist is NULL!");
+        }
+        else
+        {
+            if( (pgc->rtinfo.aplist.ApList)!=NULL )
+            {
+                GAgent_Printf( GAGENT_CRITICAL,"free xpg aplist...");
+                free( (pgc->rtinfo.aplist.ApList) );
+            }
+            if( pAplist->ApNum>0 )
+            {
+                pgc->rtinfo.aplist.ApNum = pAplist->ApNum;
+                (pgc->rtinfo.aplist.ApList) = (ApHostList_str *)malloc( (pAplist->ApNum)*sizeof(ApHostList_str) );
+                if( (pgc->rtinfo.aplist.ApList)!=NULL )
+                {
+                    for( i=0;i<pAplist->ApNum;i++ )
+                    {
+                        strcpy( pgc->rtinfo.aplist.ApList[i].ssid,pAplist->ApList[i].ssid);
+                        pgc->rtinfo.aplist.ApList[i].ApPower = pAplist->ApList[i].ApPower;
+    //                    GAgent_Printf( GAGENT_CRITICAL,"AP Scan SSID = %s power = %d", 
+    //                                                            pgc->rtinfo.aplist.ApList[i].ssid,
+    //                                                            pgc->rtinfo.aplist.ApList[i].ApPower );
+                    }
+                }
+            }
+        }
+        
     }
     GAgent_LocalSendGAgentstatus(pgc,dTime_s);
     GAgentSetLedStatus( gagentWiFiStatus );

@@ -19,8 +19,13 @@ Add by Alex.lin     --2015-04-17.
 ****************************************************************/
 uint16 GAgent_DevCheckWifiStatus( uint16 wifistatus  )
 {
-
-    return wifistatus;
+    static uint16 halWiFiStatus=0;
+    
+    if( 0xFFFF!=wifistatus )
+    {
+        halWiFiStatus = wifistatus;
+    }
+    return halWiFiStatus;
 }
 /****************************************************************
 Function    :   GAgent_CreateTcpServer
@@ -138,4 +143,8 @@ int32 GAgent_CreateUDPBroadCastServer( uint16 udpbroadcast_port, struct sockaddr
     *sockaddr = addr;
     return serversocketid;
 }
-
+int8 GAgent_DRVWiFiPower( pgcontext pgc )
+{
+    
+    return 100;
+}

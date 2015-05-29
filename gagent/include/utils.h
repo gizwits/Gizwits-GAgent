@@ -12,5 +12,9 @@ int8 dealPacket( pgcontext pgc, ppacket pTxBuf );
 int32 BuildPacket( ppacket pbuf,int32 type );
 uint8 GAgent_SetCheckSum(  uint8 *buf,int packLen );
 uint8 GAgent_SetSN( uint8 *buf );
-
+int32 SetPacketType( int32 currentType,int32 type,int8 flag );
+int8 isPacketTypeSet( int32 currentType,int32 type );
+void GAgent_Printf(unsigned int level, char *fmt, ...);
+uint8 GAgent_NewSN(void);
+void GAgent_DebugPacket(unsigned char *pData, int len);
 #endif

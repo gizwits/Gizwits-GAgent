@@ -3,12 +3,12 @@
 #include "gagent_typedef.h"
 #include "iof_arch.h"
 #include "utils.h"
-
+extern pgcontext pgContextData;
 #define GAGENT_RELEASE 1
 
 #define GAGENT_MAGIC_NUM    0x55aa1122
 
-extern pgcontext pgContextData;
+
 
 #if( GAGENT_RELEASE==1)
   #define HTTP_SERVER         "api.gizwits.com"
@@ -77,6 +77,7 @@ extern pgcontext pgContextData;
 #define CLOUD_REQ_POST_JD_INFO     14
 #define CLOUD_RES_POST_JD_INFO     15
 #define CLOUD_CONFIG_OK            16
+#define CLOUD_REQ_GET_GSERVER_TIME 17
 
 #define LOCAL_DATA_IN     (1<<0)
 #define LOCAL_DATA_OUT    (1<<1)
@@ -91,22 +92,24 @@ extern pgcontext pgContextData;
 #define ONE_SECOND  (1)
 #define ONE_MINUTE  (60 * ONE_SECOND)
 #define ONE_HOUR    (60 * ONE_MINUTE)
-#define GAGENT_CLOUDREADD_TIME     10
-#define GAGENT_HTTP_TIMEOUT        5//*ONE_SECOND
-#define GAGENT_MQTT_TIMEOUT        5//*ONE_SECOND
+#define GAGENT_CLOUDREADD_TIME     (10*ONE_SECOND)
+#define GAGENT_HTTP_TIMEOUT        (5*ONE_SECOND)
+#define GAGENT_MQTT_TIMEOUT        (5*ONE_SECOND)
+#define GAGENT_STA_SCANTIME        (3*ONE_MINUTE)
+#define GAGENT_AP_SCANTIME         (15*ONE_SECOND)
 
 /*Gizwits heartbeat with eath others, Cloud, SDK/Demo, GAgent and MCU*/
-#define MCU_HEARTBEAT           55
+#define MCU_HEARTBEAT           (55*ONE_SECOND)
 
 #define LOCAL_GAGENTSTATUS_INTERVAL   (10*ONE_MINUTE)
 
-#define CLOUD_HEARTBEAT          50//*ONE_SECOND
-#define CLOUD_MQTT_SET_ALIVE          120
+#define CLOUD_HEARTBEAT          (50*ONE_SECOND)
+#define CLOUD_MQTT_SET_ALIVE      (120*ONE_SECOND)
 //#define HTTP_TIMEOUT            60//*ONE_SECOND
 /*broadcasttime(S)*/
-#define BROADCAST_TIME          30*ONE_SECOND
+#define BROADCAST_TIME          (30*ONE_SECOND)
 /* JD config timeout xs */
-#define JD_CONFIG_TIMEOUT       1*ONE_SECOND
+#define JD_CONFIG_TIMEOUT       (1*ONE_SECOND)
 
 /*For V4, GAgent waiting for MCU response of very CMD send by GAgent, Unit: ms*/
 #define MCU_ACK_TIME_MS    200
@@ -159,6 +162,14 @@ extern pgcontext pgContextData;
 #define MCU_ENABLE_BIND     0x15
 #define MCU_ENABLE_BIND_ACK 0x16
 
+#define MCU_REQ_GSERVER_TIME     0x17
+#define MCU_REQ_GSERVER_TIME_ACK 0x18
+
+/*
+ * | head(0xffff) | len(2B) | cmd(2B) | SN(1B) | flag(2B) | payload(xB) | checksum(1B) |
+ *     0xffff     cmd~checksum                                            len~payload
+ */
+#define MCU_SYNC_HEAD_LEN      2
 #define MCU_LEN_POS            2
 #define MCU_CMD_POS            4
 #define MCU_SN_POS             5
@@ -171,6 +182,15 @@ extern pgcontext pgContextData;
 #define MCU_BYTES_NO_SUM        3
 #define LOCAL_GAGENTSTATUS_MASK 0x1FFF
 
+#define WIFI_LEVEL_0                0
+#define WIFI_LEVEL_1                20
+#define WIFI_LEVEL_2                40
+#define WIFI_LEVEL_3                50
+#define WIFI_LEVEL_4                60
+#define WIFI_LEVEL_5                70
+#define WIFI_LEVEL_6                80
+
+
 #define BUF_LEN 1024*4      /* depend on you platform ram size */
 #define BUF_HEADLEN 128
 
@@ -178,6 +198,11 @@ extern pgcontext pgContextData;
 #define TS (GAgent_Printf(GAGENT_INFO, __FILE__ ":" _STR(__LINE__) ":" _STR(__FUNC__) "Flag:%x,MN:%x ...", g_stGAgentConfigData.flag, g_stGAgentConfigData.magicNumber))
 #define MS (GAgent_Printf(GAGENT_INFO, __FILE__ ":" _STR(__LINE__) ":" _STR(__FUNC__) "TOP Level Error:malloc")) // 内存分配错误
 #define MBM ((void)0) // 标记，需要注意的地方
+
+int Socket_sendto(int sockfd, u8 *data, int len, void *addr, int addr_size);
+int Socket_accept(int sockfd, void *addr, socklen_t *addr_size);
+int Socket_recvfrom(int sockfd, u8 *buffer, int len, void *addr, socklen_t *addr_size);
+int connect_mqtt_socket(int iSocketId, struct sockaddr_t *Msocket_address, unsigned short port, char *MqttServerIpAddr);
 
 void GAgent_Init( pgcontext *pgc );
 void GAgent_VarInit( pgcontext *pgc );
@@ -187,10 +212,10 @@ void GAgent_dumpInfo( pgcontext pgc );
 int32 GAgent_Cloud_GetPacket( pgcontext pgc,ppacket pbuf , int32 buflen);
 void GAgent_Cloud_Handle( pgcontext pgc, ppacket Rxbuf,int32 length );
 uint32 GAgent_Cloud_SendData( pgcontext pgc,ppacket pbuf, int32 buflen );
-uint32 GAgent_Cloud_OTAByUrl( int32 socketid,uint8 *downloadUrl );
+uint32 GAgent_Cloud_OTAByUrl( int32 socketid,int8 *downloadUrl );
 uint32 GAgent_Cloud_Disconnect();
 /********************************************** GAgent Lan API **********************************************/
-uint32 GAgent_Lan_Handle(pgcontext pgc, ppacket prxBuf, ppacket ptxBuf, int32 len);
+uint32 GAgent_Lan_Handle(pgcontext pgc, ppacket prxBuf, int32 len);
 uint32 GAgent_Lan_SendData();
 void GAgent_DoTcpWebConfig( pgcontext pgc );
 uint32 GAgent_Exit();
@@ -205,7 +230,7 @@ void GAgent_LocalSendGAgentstatus(pgcontext pgc,uint32 dTime_s );
 int32 GAgent_Local_GetPacket( pgcontext pgc, ppacket Rxbuf );
 int32 GAgent_LocalDataWriteP0( pgcontext pgc,int32 fd,ppacket pTxBuf,uint8 cmd );
 void GAgent_Local_Handle( pgcontext pgc,ppacket Rxbuf,int32 length );
-
+void GAgent_Clean_Config( pgcontext pgc );
 
 void GAgent_logevelSet( uint16 level );
 void GAgent_SetWiFiStatus( pgcontext pgc,uint16 wifistatus,int8 flag );
@@ -218,14 +243,16 @@ int8 GAgent_IsNeedDisableDID( pgcontext pgc );
 void GAgent_Reset( pgcontext pgc );
 void GAgent_Config( uint8 typed,pgcontext pgc );
 int8 GAgent_SetOldDeviceID( pgcontext pgc,int8* p_szDeviceID,int8* p_szPassCode,int8 flag );
-void GAgent_UpdateInfo( pgcontext pgc,int8 *new_pk );
+void GAgent_UpdateInfo( pgcontext pgc,uint8 *new_pk );
 void  GAgent_AddSelectFD( pgcontext pgc );
 int32 GAgent_MaxFd( pgcontext pgc ) ;
+int32 GAgent_SelectFd(pgcontext pgc,int32 sec,int32 usec );
 int8 GAgent_loglevelenable( uint16 level );
 void GAgentSetLedStatus( uint16 gagentWiFiStatus );
 
 uint8 GAgent_EnterTest( pgcontext pgc );
 uint8 GAgent_ExitTest( pgcontext pgc );
+int8 GAgent_GetStaWiFiLevel( int8 wifiRSSI );
 
 uint32 GAgent_BaseTick();
 void GAgent_Tick( pgcontext pgc );
@@ -234,6 +261,5 @@ void GAgent_LocalTick( pgcontext pgc,uint32 dTime_s );
 void GAgent_LanTick( pgcontext pgc,uint32 dTime_s );
 void GAgent_RefreshIPTick( pgcontext pgc,uint32 dTime_s );
 void GAgent_WiFiEventTick( pgcontext pgc,uint32 dTime_s );
-
-
+int8 GAgent_DRVGetWiFiMode( pgcontext pgc );
 #endif

@@ -303,133 +303,20 @@ void DestroyUDPBroadCastServer(pgcontext pgc)
 //      pgc->ls.broResourceNum = 0;
 //   }
 }
-/****************************************************************
-        FunctionName        :   GAgent_LanTick.
-        Description         :   check clients whether it is timeout.
-        Add by Will.zhou     --2015-03-10
-****************************************************************/
+
 void GAgent_LanTick( pgcontext pgc,uint32 dTime_s )
 {
-    int32 i;
-    uint16 GAgentStatus = 0;
-    uint32 GAgentConStatus = 0;
-    uint8 *ptxBuf = NULL;
-
-    if(pgc->mcu.passcodeTimeout > 0 &&  
-        ((pgc->rtinfo.GAgentStatus & WIFI_MODE_BINDING) == WIFI_MODE_BINDING))
-    {
-        pgc->mcu.passcodeTimeout--;
-        if(pgc->mcu.passcodeTimeout==0)
-            GAgent_SetWiFiStatus( pgc,WIFI_MODE_BINDING,0);
-    }
-
-    for(i = 0; i < LAN_TCPCLIENT_MAX; i++)
-    {
-        if(pgc->ls.tcpClient[i].fd > 0)
-        {
-            if( pgc->ls.tcpClient[i].timeout <= dTime_s )
-            {
-                close(pgc->ls.tcpClient[i].fd);
-                pgc->ls.tcpClient[i].fd = -1;
-                if( LAN_CLIENT_LOGIN_SUCCESS == pgc->ls.tcpClient[i].isLogin)
-                {
-                     if(pgc->ls.tcpClientNums > 0)
-                         pgc->ls.tcpClientNums--;
-                  
-                     if(0 == (pgc->ls.tcpClientNums + pgc->rtinfo.waninfo.wanclient_num))
-                     {
-                       GAgent_SetWiFiStatus( pgc,WIFI_CLIENT_ON,0 );
-                     }
-                }
-            }
-            else
-            {
-                pgc->ls.tcpClient[i].timeout -= dTime_s;
-            }
-        }
-    }
-    
-	GAgentStatus = pgc->rtinfo.GAgentStatus;
-	GAgentConStatus = pgc->gc.flag;
-   
-    if((GAgentStatus&WIFI_STATION_CONNECTED) == WIFI_STATION_CONNECTED)
-    {
-        if(pgc->ls.onboardingBroadCastTime > 0)
-        {
-            pgc->ls.onboardingBroadCastTime--;
-            resetPacket(pgc->rtinfo.Rxbuf);
-            ptxBuf = pgc->rtinfo.Rxbuf->phead;
-
-            if(pgc->rtinfo.firstStartUp)
-            {
-                GAgent_Printf( GAGENT_INFO,"UDP BC firstStartUp...");
-                send_broadCastPacket(pgc,ptxBuf,GAGENT_LAN_CMD_STARTUP_BROADCAST);
-            }
-            if((GAgentConStatus & XPG_CFG_FLAG_CONFIG) == XPG_CFG_FLAG_CONFIG)
-            {
-                GAgent_Printf( GAGENT_INFO,"UDP BC Air...");
-                send_broadCastPacket(pgc,ptxBuf,GAGENT_LAN_CMD_AIR_BROADCAST);
-            }
-            
-            if( 0==pgc->ls.onboardingBroadCastTime )
-            {
-                pgc->rtinfo.firstStartUp = 0;
-                GAgentConStatus &= (~XPG_CFG_FLAG_CONFIG);
-                pgc->gc.flag = GAgentConStatus;
-                DestroyUDPBroadCastServer(pgc);
-                GAgent_DevSaveConfigData( &(pgc->gc) );
-            }
-        }
-    }
+  
 }
 
 uint32 GAgent_Lan_Handle(pgcontext pgc, ppacket prxBuf,int32 len)
 {
-    int i =0;
-    int fd =0;
-    int ret =0;
-    uint16 GAgentStatus=0;
-    GAgentStatus = pgc->rtinfo.GAgentStatus;
-
-    if( (GAgentStatus&WIFI_MODE_AP) == WIFI_MODE_AP )
-    {
-        GAgent_DoTcpWebConfig( pgc );
-    }
-    else
-    {
-        Lan_udpDataHandle(pgc, prxBuf, len);
-        Lan_TcpServerHandler(pgc);
-        
-        for(i = 0;i < LAN_TCPCLIENT_MAX; i++)
-        {
-            fd = pgc->ls.tcpClient[i].fd;
-            if(fd <= 0)
-                continue;
-            if(FD_ISSET(fd, &(pgc->rtinfo.readfd)))
-            {
-                ret = Lan_tcpClientDataHandle(pgc, i, prxBuf, /* ptxBuf,*/ len);
-                if(ret > 0)
-                {
-                    dealPacket(pgc, prxBuf);
-                }
-            }
-        }
-    }
     return 0;
 }
 
-/****************************************************************
-        FunctionName        :   GAgent_LANInit.
-        Description         :   init clients socket and create tcp/udp server.
-        Add by Will.zhou     --2015-03-10
-****************************************************************/
 void GAgent_LANInit(pgcontext pgc)
 {
-    LAN_tcpClientInit(pgc);      
-    LAN_InitSocket(pgc);  
-    GAgent_SetWiFiStatus( pgc,WIFI_MODE_BINDING,1 );  //enable Bind
-    pgc->ls.broResourceNum = 0;//enable public broadcast resource
-    GAgent_SetWiFiStatus( pgc,WIFI_CLIENT_ON,0 );
+    GAgent_Printf( GAGENT_WARNING,"LAN module has been cut!\n");
 }
 
 /****************************************************************
