@@ -15,7 +15,7 @@ void GAgent_Init( pgcontext *pgc )
 {
     GAgent_DevInit( *pgc );
     GAgent_NewVar( pgc );
-    GAgent_logevelSet( /*GAGENT_DUMP*/GAGENT_WARNING );
+    GAgent_logevelSet( /*GAGENT_DUMP*/ GAGENT_WARNING );
 
     GAgent_VarInit( pgc );
     GAgent_LocalInit( *pgc );
@@ -194,6 +194,9 @@ void  GAgent_AddSelectFD( pgcontext pgc )
     if( pgc->ls.tcpWebConfigFd > 0 )
         FD_SET( pgc->ls.tcpWebConfigFd, &(pgc->rtinfo.readfd) );
     
+    if( pgc->ls.udp3rdCloudFd >0 )
+        FD_SET( pgc->ls.udp3rdCloudFd, &(pgc->rtinfo.readfd) );
+    
     for(i = 0; i < LAN_TCPCLIENT_MAX; i++)
     {
         if( pgc->ls.tcpClient[i].fd > 0 )
@@ -226,6 +229,9 @@ int32 GAgent_MaxFd( pgcontext pgc  )
     if( maxfd<pgc->ls.tcpWebConfigFd )
         maxfd = pgc->ls.tcpWebConfigFd;  
 
+    if( maxfd<pgc->ls.udp3rdCloudFd )
+        maxfd = pgc->ls.udp3rdCloudFd;
+    
     for(i = 0; i < LAN_TCPCLIENT_MAX; i++)
     {
         if(pgc->ls.tcpClient[i].fd >0 && maxfd< pgc->ls.tcpClient[i].fd )
@@ -489,12 +495,17 @@ void GAgent_UpdateInfo( pgcontext pgc,uint8 *new_pk )
  ********************************************************/
 void GAgent_Config( uint8 typed,pgcontext pgc )
 {
+    uint16 tempWiFiStatus=0;
     switch( typed )
     {
         //AP MODE
         case 1:
-            GAgent_DRV_WiFi_SoftAPModeStart( AP_NAME, AP_PASSWORD, WIFI_MODE_AP );
-        break;        
+             tempWiFiStatus = pgc->rtinfo.GAgentStatus;
+             tempWiFiStatus |= WIFI_MODE_ONBOARDING;
+             GAgent_Printf( GAGENT_DEBUG,"file:%s function:%s line:%d ",__FILE__,__FUNCTION__,__LINE__ );
+             tempWiFiStatus = GAgent_DevCheckWifiStatus( tempWiFiStatus );
+            //GAgent_DRV_WiFi_SoftAPModeStart( AP_NAME, AP_PASSWORD, WIFI_MODE_AP );
+        break;
         //Airlink
         case 2:
         {
@@ -515,6 +526,8 @@ void GAgent_Config( uint8 typed,pgcontext pgc )
                 {    
                     GAgent_Printf( GAGENT_INFO,"AirLink result ssid:%s key:%s",pgc->gc.wifi_ssid,pgc->gc.wifi_key );
                     tempWiFiStatus |=WIFI_MODE_STATION;
+                    pgc->gc.flag |= XPG_CFG_FLAG_CONNECTED;
+                    pgc->ls.onboardingBroadCastTime = SEND_UDP_DATA_TIMES;
                     GAgent_DevSaveConfigData( &(pgc->gc) );
                     tempWiFiStatus |= GAgent_DRVWiFi_StationCustomModeStart( pgc->gc.wifi_ssid,pgc->gc.wifi_key,tempWiFiStatus );  
                     CreateUDPBroadCastServer( pgc );
@@ -573,6 +586,7 @@ int8 GAgent_GetStaWiFiLevel( int8 wifiRSSI )
         return 6;
     if( wifiRSSI>=WIFI_LEVEL_6 )
         return 7;
+    return RET_FAILED;
 }
 /****************************************************************
 *       FunctionName      :     GAgent_BaseTick

@@ -56,6 +56,7 @@ int32 handleWebConfig( pgcontext pgc,int32 fd)
     }
     else
     {
+        uint16 TempWiFiStatus = 0;
         //GET /web_config.cgi?fname=chensf&lname=pinelinda HTTP/1.1
         index_ssid = strstr(buf_head, "ssid=");
         index_pass = strstr(buf_head, "pass=");
@@ -80,8 +81,10 @@ int32 handleWebConfig( pgcontext pgc,int32 fd)
             memcpy(pConfigData->wifi_key, index_pass, strlen(index_pass));
             pConfigData->wifi_ssid[ strlen(index_ssid) ] = '\0';
             pConfigData->wifi_key[ strlen(index_pass) ] = '\0';
+            
             pConfigData->flag |= XPG_CFG_FLAG_CONNECTED;
             pConfigData->flag |= XPG_CFG_FLAG_CONFIG;
+            pgc->ls.onboardingBroadCastTime = SEND_UDP_DATA_TIMES;
             GAgent_DevSaveConfigData( pConfigData );
 
             snprintf(buf_body, 1024, "%s", "<html><body>"
@@ -98,9 +101,16 @@ int32 handleWebConfig( pgcontext pgc,int32 fd)
                      (int)strlen(buf_body));
 
             send(fd, buf_head, strlen(buf_head), 0);
-            send(fd, buf_body, strlen(buf_body), 0);   
-            pgc->rtinfo.GAgentStatus &=~ WIFI_MODE_AP;
-            pgc->rtinfo.GAgentStatus |= GAgent_DRVWiFi_StationCustomModeStart( pgc->gc.wifi_ssid,pgc->gc.wifi_key,pgc->rtinfo.GAgentStatus );
+            send(fd, buf_body, strlen(buf_body), 0);
+            
+            //pgc->rtinfo.GAgentStatus &=~ WIFI_MODE_AP;
+            TempWiFiStatus = pgc->rtinfo.GAgentStatus;
+            TempWiFiStatus &=~ WIFI_MODE_ONBOARDING;
+            GAgent_DRVWiFi_APModeStop( pgc );
+            GAgent_Printf( GAGENT_INFO,"webconfig ssid:%s key:%s",pConfigData->wifi_ssid,pConfigData->wifi_key );
+            GAgent_Printf( GAGENT_DEBUG,"file:%s function:%s line:%d ",__FILE__,__FUNCTION__,__LINE__ );
+            //TempWiFiStatus |= GAgent_DRVWiFi_StationCustomModeStart( pgc->gc.wifi_ssid,pgc->gc.wifi_key,TempWiFiStatus );
+            TempWiFiStatus = GAgent_DevCheckWifiStatus( TempWiFiStatus );
             msleep(100);
         }
     }
@@ -128,8 +138,8 @@ Add by Alex.lin     --2015-04-25.
 ****************************************************************/
 void GAgent_DoTcpWebConfig( pgcontext pgc )
 {
-    uint16 GAgentStatus=0,i=0;
-    int32 newfd;
+    uint16 GAgentStatus=0;
+    int32 newfd = 0;
     struct sockaddr_t addr;
     int32 addrLen= sizeof(addr);
     GAgentStatus = pgc->rtinfo.GAgentStatus;
@@ -143,39 +153,25 @@ void GAgent_DoTcpWebConfig( pgcontext pgc )
         }
         return ;
     }
-
+    if( (GAgentStatus&WIFI_MODE_ONBOARDING)!= WIFI_MODE_ONBOARDING )
+        return ;
+    
     if( pgc->ls.tcpWebConfigFd <= 0 )
     {
         GAgent_Printf( GAGENT_DEBUG,"Creat Tcp Web Server." );
-        pgc->ls.tcpWebConfigFd = GAgent_CreateWebConfigServer( 80 );   
+        pgc->ls.tcpWebConfigFd = GAgent_CreateWebConfigServer( 80 );
     }
     if( pgc->ls.tcpWebConfigFd<0 )
         return ;
-    if(FD_ISSET(pgc->ls.tcpWebConfigFd, &(pgc->rtinfo.readfd)))
-    {
-        /* if nonblock, can be done in accept progress */
-        newfd = Socket_accept(pgc->ls.tcpWebConfigFd, &addr, (socklen_t *)&addrLen);
-        if(newfd > 0)
-        {
-            Lan_AddTcpNewClient(pgc, newfd, &addr);
-        }
-    }
-
-    for(i = 0;i < LAN_TCPCLIENT_MAX; i++)
-    {
-        int32 fd=0;
-        fd = pgc->ls.tcpClient[i].fd;
-        if(fd <= 0)
-            continue;
-        if(FD_ISSET(fd, &(pgc->rtinfo.readfd)))
-        {
-            Lan_setClientTimeOut(pgc, i);
-            handleWebConfig( pgc,fd);
-            close(fd);
-            fd = INVALID_SOCKET;
-            pgc->ls.tcpClient[i].fd=INVALID_SOCKET;
-        }
-    }
+    if( !FD_ISSET(pgc->ls.tcpWebConfigFd, &(pgc->rtinfo.readfd)) )
+        return ;
+        
+    newfd = Socket_accept(pgc->ls.tcpWebConfigFd, &addr, (socklen_t *)&addrLen);
+    if(newfd < 0)
+        return ;
+    handleWebConfig( pgc,newfd);
+    close(newfd);
+    newfd = INVALID_SOCKET;
 }
 
 

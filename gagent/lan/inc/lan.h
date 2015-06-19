@@ -16,6 +16,10 @@
 #define GAGENT_LAN_CMD_BINDING              0X0006
 #define GAGENT_LAN_CMD_LOGIN                0X0008
 #define GAGENT_LAN_CMD_TRANSMIT             0X0090
+#define GAGENT_LAN_CMD_TRANSMIT_91          0x0091
+#define GAGENT_LAN_CMD_CTL_93               0x0093
+#define GAGENT_LAN_CMD_CTLACK_94            0x0094
+
 #define GAGENT_LAN_CMD_GETFVRINFO           0X000A
 #define GAGENT_LAN_CMD_HOSTPOTS             0X000C
 #define GAGENT_LAN_CMD_LOG                  0X0010
@@ -28,6 +32,7 @@
 #define LAN_PROTOCOL_HEAD_LEN              4
 #define LAN_PROTOCOL_FLAG_LEN              1
 #define LAN_PROTOCOL_CMD_LEN               2
+#define LAN_PROTOCOL_SN_LEN                4    /* for cmd == 93/94 */
 #define LAN_PROTOCOL_MCU_ATTR_LEN          8
 
 
@@ -47,6 +52,7 @@ int32 Lan_TcpServerHandler(pgcontext pgc);
 int32 Lan_tcpClientDataHandle(pgcontext pgc, uint32 channel,ppacket prxBuf,/* ppacket ptxBuf,*/ int32 buflen);
 int32 LAN_tcpClientInit(pgcontext pgc);
 int32 Lan_dispatchTCPData(pgcontext pgc, ppacket prxBuf,/* ppacket ptxBuf,*/ int32 clientIndex);
-
+void Lan_SetClientAttrs(pgcontext pgc, int32 fd, uint16 cmd, int32 sn);
+void Lan_ClearClientAttrs(pgcontext pgc, stLanAttrs_t *client);
 
 #endif

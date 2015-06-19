@@ -3,10 +3,6 @@
 #include "string.h"
 extern int32 g_MQTTStatus;
 
-#define kCRLFNewLine     "\r\n"
-#define kCRLFLineEnding  "\r\n\r\n"
-
-
 int32 Http_POST( int32 socketid, const int8 *host,const int8 *passcode,const int8 *mac,const int8 *product_key )
 {
     int32 ret=0;
@@ -285,82 +281,78 @@ int32 Http_GetTarget( const int8 *host,
 
     return 1;
 }
-/******************************************************
- *  FUNCTION  :   Http send the get target id and url
- *                to http server.
- *  OTATYPE_T :   OTATYPE_WIFI or OTATYPE_MCU
- *  szHver    :   it's depend on OTATYPE_T
- *  szSver    :   it's depend on OTATYPE_T
- *  return    :  0-send ok, 1-send fail. 
- *   Add by Alex lin  --2014-10-29
- *
- ********************************************************/
-int32 HTTP_DoGetTargetId(enum OTATYPE_T type,const int8 *host,int8 *szDID,int8 *szPK,int8 *szHver,
-                         int8 *szSver,int32 socketid )
+
+int32 CheckFirmwareUpgrade(const int8 *host, const int8 *did,enum OTATYPE_T type,
+                                  const int8 *passcode,const int8 *hard_version, 
+                                  const int8 *soft_version, int32 socketid )
 {
+    int8 *getBuf=NULL;
+    int32 totalLen=0;
     int32 ret=0;
-    int32 temp_fid=0;
- 
-    ret = Http_GetTarget( host,szPK,szDID,type,szHver,szSver,temp_fid,socketid );
-    return 0;
+    int8 *url = "/dev/ota/v4.1/update_and_check";  
+    int8 Content[100]={0};
+    int32 ContentLen=0;
+    getBuf = (int8*)malloc(500);
+    if(getBuf == NULL)
+    {
+        return RET_FAILED;
+    }
+    sprintf(Content,"passcode=%s&type=%d&hard_version=%s&soft_version=%s",passcode,type,hard_version,soft_version);
+    ContentLen=strlen(Content);
+    memset( getBuf,0,500 );
+    snprintf( getBuf,500,"%s %s%s%s %s%s%s%s%s%s%d%s%s%s%s%s",
+             "POST",url,"/",did,"HTTP/1.1",kCRLFNewLine,
+             "Host:",host,kCRLFNewLine,
+             "Content-Length:",ContentLen,kCRLFNewLine,
+             "Content-Type: application/x-www-form-urlencoded",kCRLFNewLine,
+             kCRLFNewLine,
+             Content
+             );
+    totalLen =strlen( getBuf );
+    GAgent_Printf(GAGENT_INFO,"Http_post_totalLen=%d\r\n",totalLen);
+    ret = send( socketid, getBuf,totalLen,0 );
+
+    free(getBuf);
+    if(ret>0) 
+        return RET_SUCCESS;
+
+    return RET_FAILED;
 }
+
 /******************************************************
- *FUNCTION      :   get the http return target_fid 
+ *FUNCTION      :   get the http return softver 
  *                  and download url(for hf wifi)
- *  target_fid  :   target_fid
+ *  softver     :   softver
  *  download_url:   download_url 
  *          buf :   http receive data.
  *       return :  0-return ok, 1-return fail. 
  *   Add by Alex lin  --2014-10-29
  *
  ********************************************************/
-int32 Http_GetFid_Url( int32 *target_fid,int8 *download_url, int8 *fwver, uint8 *buf )
+int32 Http_GetSoftver_Url( int8 *download_url, int8 *softver, uint8 *buf )
 {
     int8 *p_start = NULL;
     int8 *p_end =NULL;
-    int8 fid[10]={0};
-    int16 fwverlen = 0;
-    p_start = strstr( (char *)buf,"target_fid=");
-    if( p_start==NULL )  return 1;
-    p_start =  p_start+(sizeof( "target_fid=" )-1);
 
+    memset(softver, 0x0, 32);
+    p_start = strstr( (char *)buf,"soft_ver=");
+    if( p_start==NULL )  return 1;
+    p_start =  p_start+(sizeof( "soft_ver=" )-1);
     p_end = strstr( p_start,"&");
     if( p_end==NULL )  return 1;
-    memcpy( fid,p_start,(p_end-p_start));
+    memcpy( softver,p_start,(p_end-p_start));
 
-    *target_fid = atoi(fid);
     p_start = strstr(p_end,"download_url=");
-
     if(p_start==NULL ) return 1;
     p_start+=sizeof("download_url=")-1;
-
-    // end with & or /r/n
-    memset(fwver, 0x0, 32);
-    p_end = strstr( p_start,"&");
-    if( p_end==NULL )
-    {
-        p_end = strstr(p_start,kCRLFNewLine);
-        if( p_end==NULL )   return 1;
-    }
+    p_end = strstr(p_start,kCRLFNewLine);
+    if( p_end==NULL )  return 1;
     memcpy( download_url,p_start,(p_end-p_start));
     download_url[p_end-p_start] = '\0';
-
-    p_start = strstr(p_end,"firmware_version=");
-    if(p_start!=NULL )
-    {
-        p_start+=sizeof("download_url=")-1;
-
-        p_end = strstr(p_start,kCRLFNewLine);
-        if( p_end==NULL )   return 1;
-        fwverlen = p_end - p_start;
-        if(fwverlen > 32)
-        {
-            fwverlen = 32;
-        }
-        memcpy(fwver,p_start, fwverlen);
-    }
+    
     return 0;
 }
+
 /******************************************************
  *
  *   FUNCTION       :   get the uuid by productkey in HTTP GET
@@ -502,13 +494,13 @@ int32 Http_JD_Post_Feed_Key_req( int32 socketid,int8 *feed_id,int8 *access_key,i
 *   Add by Alex lin  --2014-12-02
 *
 **********************************************************************/
-int32 Http_HeadLen( int8 *httpbuf )
+int32 Http_HeadLen( uint8 *httpbuf )
 {
    int8 *p_start = NULL;
    int8 *p_end =NULL;
    int32 headlen=0;
-   p_start = httpbuf;
-   p_end = strstr( httpbuf,kCRLFLineEnding);
+   p_start = (char *)httpbuf;
+   p_end = strstr( (char *)httpbuf,kCRLFLineEnding);
    if( p_end==NULL )
    {
        GAgent_Printf(GAGENT_DEBUG,"Can't not find the http head!");
@@ -526,13 +518,13 @@ int32 Http_HeadLen( int8 *httpbuf )
 *   Add by Alex lin  --2014-12-02
 *
 **********************************************************************/
-int32 Http_BodyLen( int8 *httpbuf )
+int32 Http_BodyLen( uint8 *httpbuf )
 {
    int8 *p_start = NULL;
    int8 *p_end =NULL;
    int8 bodyLenbuf[10]={0};
    int32 bodylen=0;  //Content-Length: 
-   p_start = strstr( httpbuf,"Content-Length: ");
+   p_start = strstr( (char *)httpbuf,"Content-Length: ");
    if( p_start==NULL ) return 0;
    p_start = p_start+strlen("Content-Length: ");
    p_end = strstr( p_start,kCRLFNewLine);
@@ -542,23 +534,51 @@ int32 Http_BodyLen( int8 *httpbuf )
    bodylen = atoi(bodyLenbuf);
    return bodylen;
 }
-int32 Http_GetFV(int8 *httpbuf,int8 *FV )
+int32 Http_GetHost(int8 *downloadurl,int8 *host,int8 *url )
 {
-//Firmware-Version: 
+   int8 *p_start = NULL;
+   int8 *p_end =NULL; 
+   int32 len;
+   len = strlen(downloadurl);
+   p_start = strstr( downloadurl,"http://" );
+   if(p_start==NULL) 
+       return RET_FAILED;
+   p_start = p_start + strlen("http://");
+   p_end = strstr( p_start,"/");
+   if(p_end==NULL)
+       return RET_FAILED;
+   memcpy(host,p_start,p_end-p_start);
+   host[p_end-p_start] = '\0';
+   
+   p_start = p_end;
+   if(p_start==NULL) 
+       return RET_FAILED;
+   p_end = strstr( p_start+1,"\0");
+   if(p_end==NULL)
+       return RET_FAILED;
+   memcpy(url,p_start,30);
+   
+   return RET_SUCCESS;
+}
+
+
+int32 Http_GetSV( uint8 *httpbuf,int8 *SV )
+{
+//Soft-Version: 
    int8 *p_start = NULL;
    int8 *p_end =NULL;
-   int32 FV_Len=0;
-   p_start = strstr( httpbuf,"Firmware-Version: ");
+   int32 SV_Len=0;
+   p_start = strstr( (char *)httpbuf,"Soft-Version: " );
    if(p_start==NULL) 
        return 0;
-   p_start = p_start+strlen("Firmware-Version: ");
+   p_start = p_start+strlen("Soft-Version: " );
    p_end = strstr( p_start,kCRLFNewLine);
    if(p_end==NULL)
        return 0;
-   FV_Len = (p_end-p_start);
-   memcpy(FV,p_start,FV_Len);
-   FV[FV_Len]='\0';
-   return FV_Len;
+   SV_Len = (p_end-p_start);
+   memcpy(SV,p_start,SV_Len);
+   SV[SV_Len]='\0';
+   return SV_Len;
 
 }
 /*************************************************************
@@ -568,16 +588,15 @@ int32 Http_GetFV(int8 *httpbuf,int8 *FV )
 *   MD5       :  MD5 form http head(16b).
 *           add by alex.lin ---2014-12-04
 *************************************************************/
-int32 Http_GetMD5( int8 *httpbuf,int8 *MD5)
+int32 Http_GetMD5( uint8 *httpbuf,int8 *MD5,int8 *strMD5)
 {
    int8 *p_start = NULL;
    int8 *p_end =NULL;
-   int8 Temp_MD5[32]={0};
    int8 MD5_TMP[16];
    int8 Temp[3]={0};
    int8 *str;
    int32 i=0,j=0;
-   p_start = strstr( httpbuf,"Firmware-MD5: ");
+   p_start = strstr( (char *)httpbuf,"Firmware-MD5: ");
    if(p_start==NULL)
        return 1;
    p_start = p_start+strlen("Firmware-MD5: ");
@@ -585,15 +604,14 @@ int32 Http_GetMD5( int8 *httpbuf,int8 *MD5)
    if(p_end==NULL)
        return 1;
    if((p_end-p_start)!=32) return 1;
-   memcpy( Temp_MD5,p_start,32);
-   
-   //memcpy( MD5,p_start,16);
+   memcpy( strMD5,p_start,32 );
+   memcpy( MD5,p_start,16);
    MD5[16]= '\0';
 
    for(i=0;i<32;i=i+2)
    {
-       Temp[0] = Temp_MD5[i];
-       Temp[1] = Temp_MD5[i+1];
+       Temp[0] = strMD5[i];
+       Temp[1] = strMD5[i+1];
        Temp[2] = '\0';
        MD5_TMP[j]= strtol(Temp, &str,16);  
        j++;

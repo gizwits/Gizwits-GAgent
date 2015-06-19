@@ -37,7 +37,7 @@ int32 Lan_AddTcpNewClient(pgcontext pgc, int fd, struct sockaddr_t *addr)
         {
             pgc->ls.tcpClient[i].fd = fd;
             Lan_setClientTimeOut(pgc, i);
-			
+
             return RET_SUCCESS;
         }
     }
@@ -252,33 +252,125 @@ static void Lan_handlePasscode( pgcontext pgc, ppacket src, int clientIndex)
     /* passcode */
     for(i=0;i < passcodeLen;i++)
     {
-    	pbuf[10+i] = pgc->gc.wifipasscode[i];
+        pbuf[10+i] = pgc->gc.wifipasscode[i];
     }
 
     if((pgc->rtinfo.GAgentStatus & WIFI_MODE_BINDING) == WIFI_MODE_BINDING)//enable bind 
-	{
-		ret = send(fd, pbuf, 20, 0);			
+    {
+        ret = send(fd, pbuf, 20, 0);
         GAgent_Printf(GAGENT_INFO,"Send passcode(%s) to client[%d][send data len:%d] ", 
         pgc->gc.wifipasscode, fd, ret);		
-	}
-	else
-	{
-		/* passcode len */
-    	pbuf[8] = 0x00;
-    	pbuf[9] = 0x00;
-    	
-		ret = send(fd, pbuf, 10, 0);
+    }
+    else
+    {
+        /* passcode len */
+        pbuf[8] = 0x00;
+        pbuf[9] = 0x00;
+        
+        ret = send(fd, pbuf, 10, 0);
         GAgent_Printf(GAGENT_ERROR,"timeout,client[%d]cannot bind,close socket", fd);
-		close(fd);
-		pgc->ls.tcpClient[clientIndex].fd = INVALID_SOCKET;
-	}
+        close(fd);
+        pgc->ls.tcpClient[clientIndex].fd = INVALID_SOCKET;
+    }
 
     return;
 }
+void Lan_GetWifiHotspots( pgcontext pgc,ppacket pTxBuf,int32 clientIndex )
+{
+    volatile varc hostvarlen;
+    uint8 *pbuf=NULL;
+    uint8 ssidlen=0;
+    int32 ret=0;
+    int32 pos=0,payloadLen=0,wifihostspotslen=0;
+    int32 fd=0,i=0;
+    fd = pgc->ls.tcpClient[clientIndex].fd;
+    resetPacket( pTxBuf );
+    pbuf = pTxBuf->phead;
 
+    if(0==pgc->rtinfo.aplist.ApNum)
+    {
+        wifihostspotslen =0;
+    }
+    else
+    {
+        
+        for( i=0;i<pgc->rtinfo.aplist.ApNum;i++ )
+        {
+            ssidlen = strlen((const int8 *)(pgc->rtinfo.aplist.ApList[i].ssid) );
+            //ssidlen
+            wifihostspotslen+=2;
+            //ssid
+            wifihostspotslen+=ssidlen;
+            //power
+            wifihostspotslen++;
+        }
+    }
+    //varlen = flag(1b)+cmd(2b)+wifihotspotsLen
+    payloadLen = 1+2+wifihostspotslen;
+    hostvarlen = Tran2varc( payloadLen );
+    
+    /* protocol version */
+    pbuf[0] = 0x00;
+    pbuf[1] = 0x00;
+    pbuf[2] = 0x00;
+    pbuf[3] = 0x03;
+    /* len */
+    for( i=0;i<hostvarlen.varcbty;i++ )
+    {
+        pbuf[4+i] = hostvarlen.var[i];
+    }
+    pos=4+hostvarlen.varcbty;
+    /* flag */
+    pbuf[pos] = 0x00;
+    pos++;
+    /* cmd */
+    pbuf[pos] = 0x00;
+    pbuf[pos+1] = 0x0D;
+    pos+=2;
+    if(0==pgc->rtinfo.aplist.ApNum)
+    {
+        ret = send(fd, pbuf, pos, 0);
+    }
+    else
+    {
+        for( i=0;i<pgc->rtinfo.aplist.ApNum;i++ )
+        { 
+            ssidlen = strlen((const int8 *)(pgc->rtinfo.aplist.ApList[i].ssid) );
+            *(uint16 *)(pbuf+pos) = htons( ssidlen );
+            pos+=2;
+            strcpy( (int8*)(pbuf+pos),(const int8 *)(pgc->rtinfo.aplist.ApList[i].ssid));
+            pos+=ssidlen;
+            pbuf[pos] = pgc->rtinfo.aplist.ApList[i].ApPower;
+            pos++;
+        }
+        ret = send(fd, pbuf, pos, 0);
+    }
+    
+    GAgent_Printf( GAGENT_INFO,"LEN=%d",pos );
+    GAgent_Printf( GAGENT_INFO,"--------------------------------------------\r\n");
+    for( i=0;i<pos;i++ )
+    {
+        GAgent_Printf(  GAGENT_DUMP," %02X",pbuf[i] );
+    }
+    GAgent_Printf( GAGENT_INFO,"--------------------------------------------");
+    int32 bytesOfLen=0,len=0;
+    bytesOfLen = mqtt_num_rem_len_bytes( pbuf+ 3);
+    len = mqtt_parse_rem_len( pbuf+ 3 );
+    GAgent_Printf( GAGENT_INFO," bytesOfLen=%d  len=%d",bytesOfLen,len );
+    msleep(100);
+    close( fd );
+    pgc->ls.tcpClient[clientIndex].fd = INVALID_SOCKET;
+    pgc->ls.tcpClient[clientIndex].isLogin = LAN_CLIENT_LOGIN_FAIL;
+    pgc->ls.tcpClient[clientIndex].timeout = 0;
+   
+    if(pgc->ls.tcpClientNums > 0)
+    {
+        pgc->ls.tcpClientNums--;
+    }
+}
 /****************************************************************
         FunctionName        :   GAgent_Lan_SendDevInfo.
-        Description         :   	send Dev Info to App.
+        Description         :   send Dev Info to App.
         Add by Eric.gong     --2015-04-22
 ****************************************************************/
 void GAgent_Lan_SendDevInfo(pgcontext pgc,ppacket pTxBuf,int32 clientIndex)
@@ -414,6 +506,7 @@ void Local_Ack2TcpClient(pgcontext pgc, uint32 channel)
         send( pgc->ls.tcpClient[channel].fd,tmpBuf,sizeof(tmpBuf),0 );
     }
 }
+
 /****************************************************************
         FunctionName        :   Lan_dispatchTCPData.
         Description         :   parse and dispatch tcp cmd message.
@@ -425,6 +518,7 @@ int32 Lan_dispatchTCPData(pgcontext pgc, ppacket prxBuf,/* ppacket ptxBuf,*/ int
     uint16 cmd;
     int32 bytesOfLen;
     int len;
+    int32 sn;
 
     bytesOfLen = mqtt_num_rem_len_bytes(prxBuf->phead + 3);
     if(bytesOfLen<1 || bytesOfLen>4)
@@ -436,8 +530,9 @@ int32 Lan_dispatchTCPData(pgcontext pgc, ppacket prxBuf,/* ppacket ptxBuf,*/ int
     cmd = *(uint16 *)(prxBuf->phead + LAN_PROTOCOL_HEAD_LEN + LAN_PROTOCOL_FLAG_LEN
                         + bytesOfLen);
     cmd = ntohs(cmd);
+    
     if((cmd != GAGENT_LAN_CMD_BINDING) && (cmd != GAGENT_LAN_CMD_LOGIN)
-        && (cmd != GAGENT_LAN_CMD_INFO))
+        && (cmd != GAGENT_LAN_CMD_INFO)&& (cmd != GAGENT_LAN_CMD_HOSTPOTS) )
     {
         ret = Lan_checkAuthorization(pgc, clientIndex);
         if(0 == ret)
@@ -454,12 +549,32 @@ int32 Lan_dispatchTCPData(pgcontext pgc, ppacket prxBuf,/* ppacket ptxBuf,*/ int
         case GAGENT_LAN_CMD_LOGIN:
             Lan_handleLogin( pgc, prxBuf,clientIndex );
             break;
+        case GAGENT_LAN_CMD_CTL_93:
+            prxBuf->type = SetPacketType( prxBuf->type,LAN_TCP_DATA_IN,1 );
+            ParsePacket(prxBuf);
+            if((prxBuf->pend - prxBuf->ppayload) > 0)
+            {
+                ret = prxBuf->pend - prxBuf->ppayload;
+                sn = *(int32 *)(prxBuf->phead + LAN_PROTOCOL_HEAD_LEN + LAN_PROTOCOL_FLAG_LEN
+                            + bytesOfLen + LAN_PROTOCOL_CMD_LEN);
+                sn = ntohl(sn);
+
+                Lan_SetClientAttrs(pgc, pgc->ls.tcpClient[clientIndex].fd, cmd, sn);
+            }
+            else
+            {
+                ret = 0;
+            }
+            break;
         case GAGENT_LAN_CMD_TRANSMIT:
             prxBuf->type = SetPacketType( prxBuf->type,LAN_TCP_DATA_IN,1 );
             ParsePacket(prxBuf);
             if((prxBuf->pend - prxBuf->ppayload) > 0)
             {
-               ret = prxBuf->pend - prxBuf->ppayload;
+                ret = prxBuf->pend - prxBuf->ppayload;
+
+                sn = 0;
+                Lan_SetClientAttrs(pgc, pgc->ls.tcpClient[clientIndex].fd, cmd, sn);
             }
             else
             {
@@ -467,9 +582,7 @@ int32 Lan_dispatchTCPData(pgcontext pgc, ppacket prxBuf,/* ppacket ptxBuf,*/ int
             }
             break;
         case GAGENT_LAN_CMD_HOSTPOTS:
-            /* 
-            Lan_GetWifiHotspots();
-            */
+            Lan_GetWifiHotspots( pgc,prxBuf,clientIndex );
             break;
         case GAGENT_LAN_CMD_LOG:
             break;

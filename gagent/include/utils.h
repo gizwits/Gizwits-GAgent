@@ -17,4 +17,6 @@ int8 isPacketTypeSet( int32 currentType,int32 type );
 void GAgent_Printf(unsigned int level, char *fmt, ...);
 uint8 GAgent_NewSN(void);
 void GAgent_DebugPacket(unsigned char *pData, int len);
+void clearChannelAttrs(pgcontext pgc);
+void setChannelAttrs(pgcontext pgc, stCloudAttrs_t *cloudClient, stLanAttrs_t *lanClient, uint8 isBroadCast);
 #endif

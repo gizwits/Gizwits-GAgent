@@ -125,6 +125,26 @@ typedef struct GAGENT_CONFIG
     GAgent3Cloud cloud3info;
 }GAGENT_CONFIG_S, gconfig, *pgconfig;
 
+typedef struct
+{
+    int32 sn;   /* sn of cmd */
+    int32 fd;   /* >=0:fd;<0 broadcast */
+    uint16 cmd;
+}stLanAttrs_t;
+
+typedef struct
+{
+    int32 sn;
+    uint16 cmd;
+    int8 phoneClientId[PHONECLIENTID+1];
+}stCloudAttrs_t;
+
+typedef struct
+{
+    uint32 type;
+    stLanAttrs_t lanClient;
+    stCloudAttrs_t cloudClient;
+}stChannelAttrs_t;
 
 /* MCU信息 */
 typedef struct _XPG_MCU
@@ -136,6 +156,7 @@ typedef struct _XPG_MCU
     uint16  passcodeEnableTime;
     uint16  passcodeTimeout;
     uint8 timeoutCnt;
+    volatile uint8 isBusy;
     //int8 loseTime;
     /* 8+1('\0') for print32f. */
     uint8   protocol_ver[MCU_PROTOCOLVER_LEN+1];
@@ -144,6 +165,8 @@ typedef struct _XPG_MCU
     uint8   soft_ver[MCU_SOFTVER_LEN+1];
     uint8   product_key[PK_LEN+1];
     uint8   mcu_attr[MCU_MCUATTR_LEN];
+
+    ppacket Txbuf;/* send data to local buf */
 }XPG_MCU;
 
 typedef struct _wifiStatus
@@ -152,6 +175,7 @@ typedef struct _wifiStatus
 }wifistatus;
 typedef struct _waninfo
 {
+    stCloudAttrs_t srcAttrs;
     uint32 send2HttpLastTime;
     uint32 send2MqttLastTime;
     uint32 ReConnectMqttTime;
@@ -166,7 +190,8 @@ typedef struct _waninfo
     uint16 CloudStatus;
     uint16 mqttstatus;
     uint16 mqttMsgsubid;
-
+    uint16 Cloud3Status; //第三方云的状态机
+    
     int8 Cloud3Flag;/* need to connect 3rd cloud flag */
     int8 AirLinkFlag;    
     int8 phoneClientId[PHONECLIENTID+1];
@@ -221,6 +246,7 @@ typedef struct runtimeinfo_t
     ppacket Rxbuf;/* receive data from local buf */
     NetHostList_str aplist;
     RunTimeInfo3rd cloud3rd;
+    stChannelAttrs_t stChannelAttrs;    /* the attrs of channel connected to GAgent */
 
 }runtimeinfo, *pruntimeinfo;
 
@@ -243,6 +269,7 @@ typedef struct webserver_t
 typedef struct lanserver_t
 {
     int32 udpBroadCastServerFd;
+    int32 udp3rdCloudFd;
     int32 udpServerFd;
     int32 tcpServerFd;
     int32 tcpWebConfigFd;
@@ -250,6 +277,8 @@ typedef struct lanserver_t
     uint32 onboardingBroadCastTime;//config success broadcast Counter
     uint32 startupBroadCastTime;//first on ele broadcast Counter
     int32 broResourceNum;//public resource counter for broadcast
+    /* the client attrs connected to Gagent while sending ctrl cmd */
+    stLanAttrs_t srcAttrs;
 
     struct{
         int32 fd;
@@ -276,6 +305,6 @@ typedef struct gagentcontext_t
 }gcontext, *pgcontext;
 
 //typedef int32 (*filter_t)(BufMan*, u8*);
-typedef int32 (*pfMasterMCU_ReciveData)( pgcontext pgc, ppacket Rxbuf );
+typedef int32 (*pfMasterMCU_ReciveData)( pgcontext pgc );
 typedef int32  (*pfMasertMCU_SendData)( int serial_fd,unsigned char *buf,int buflen );
 #endif

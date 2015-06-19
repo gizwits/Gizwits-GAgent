@@ -26,5 +26,6 @@ void Local_HalInit();
 void Local_GetInfo( pgcontext pgc );
 void Local_Ack2MCU( int32 fd,uint8 sn,uint8 cmd );
 void Local_Ack2MCUwithP0( ppacket pbuf,int32 fd,uint8 sn,uint8 cmd );
+int32 GAgent_Local_ExtractOnePacket(uint8 *buf);
 
 #endif

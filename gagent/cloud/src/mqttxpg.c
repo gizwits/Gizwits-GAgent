@@ -226,26 +226,49 @@ void Log2Cloud( pgcontext pgc )
                             other fail.
         Add by Alex.lin     --2015-03-17
 ********************************************************************/
-int32 MQTT_SenData( int8 *szDID, ppacket pbuf,/*uint8 *buf,*/ int32 buflen )
+int32 MQTT_SenData( pgcontext pgc, int8 *szDID, ppacket pbuf,/*uint8 *buf,*/ int32 buflen )
 {
     uint8 *sendpack=NULL;
     int32 i=0,sendpacklen=0,headlen=0;
     int16 varlen=0;
     volatile varc sendvarc;
-    int8 msgtopic[40]= {0};
+    int8 msgtopic[64]= {0};
     int32 didlen=0;
+    uint16 cmd = pgc->rtinfo.stChannelAttrs.cloudClient.cmd;
+    int32 sn = pgc->rtinfo.stChannelAttrs.cloudClient.sn;
+    int8 *clienid = pgc->rtinfo.stChannelAttrs.cloudClient.phoneClientId;
+    uint8 pos = 0;
+    int32 clienIdLen;
+    
     didlen = strlen(szDID);
     if(didlen!=22)
         return -1;
     
     memcpy( msgtopic,"dev2app/",strlen("dev2app/"));
+    pos += strlen("dev2app/");
     memcpy( msgtopic+strlen("dev2app/"),szDID,didlen );
-    msgtopic[strlen("dev2app/")+didlen] = '\0';
+    pos += didlen;
+    if(0x0094 == cmd)
+    {
+        clienIdLen = strlen( (const int8 *)clienid);
+        if(clienIdLen > 0)
+        {
+            msgtopic[pos] = '/';
+            pos++;
+            memcpy( msgtopic+pos,clienid,clienIdLen );
+            pos+=clienIdLen;
+        }
+    }
+    msgtopic[pos] = '\0';
     
     //protocolVer(4B)+varLen(1~4B)+flag(1B)+cmd(2B)+P0
     varlen = 1+2+buflen;
+    if(0x0093 == cmd || 0x0094 == cmd)
+    {
+        varlen += sizeof(sn);
+    }
     sendvarc=Tran2varc(varlen);
-    sendpacklen = 4+sendvarc.varcbty+1+2+buflen;
+    sendpacklen = 4+sendvarc.varcbty+varlen;
     headlen = sendpacklen-buflen;
     
     sendpack = ( (pbuf->ppayload)-headlen );
@@ -262,9 +285,11 @@ int32 MQTT_SenData( int8 *szDID, ppacket pbuf,/*uint8 *buf,*/ int32 buflen )
      //flag   
     sendpack[4+sendvarc.varcbty] = 0x00;
     //CMD
-    sendpack[4+sendvarc.varcbty+1]=0x00;
-    sendpack[4+sendvarc.varcbty+2]=0x91;
-    
+    *(uint16 *)&sendpack[4+sendvarc.varcbty+1] = htons(cmd);
+    if(0x0093 == cmd || 0x0094 == cmd)
+    {
+        *(int32 *)&sendpack[4+sendvarc.varcbty+1 + 2] = htonl(sn);
+    }
 
     GAgent_Printf(GAGENT_DEBUG,"------SEND TO Cloud ------\r\n");
     for(i=0;i<sendpacklen;i++)
@@ -347,6 +372,7 @@ int32 Mqtt_DispatchPublishPacket( pgcontext pgc,u8 *packetBuffer,int32 packetLen
     //int32 clientidlen = 0;
     u8 *pTemp;
     u16 cmd;
+    int32 sn;
     u16 *pcmd=NULL;
 
     topiclen = mqtt_parse_pub_topic(packetBuffer, topic);
@@ -390,20 +416,19 @@ int32 Mqtt_DispatchPublishPacket( pgcontext pgc,u8 *packetBuffer,int32 packetLen
         }
         clientid[i]= '\0';
         strcpy( pgc->rtinfo.waninfo.phoneClientId ,(const int8*)clientid );
+        pgc->rtinfo.waninfo.srcAttrs.cmd = cmd;
         memcpy( packetBuffer,pHiP0Data,HiP0DataLen );
         GAgent_Printf( GAGENT_INFO,"Cloud CMD =%04X",cmd );
         if( cmd==0x0093 )
         {
-            uint8 tempCmd[2];
-            tempCmd[0] = pHiP0Data[4+varlen+1];
-            tempCmd[1] = pHiP0Data[4+varlen+1+1];
-            pHiP0Data[4+varlen+1]=0x00;
-            pHiP0Data[4+varlen+1+1]=0x94;
-            //ack to cloud
-            Mqtt_Ack2Cloud( (uint8*)pgc->rtinfo.waninfo.phoneClientId,(uint8*)pgc->gc.DID,pHiP0Data,HiP0DataLen );
-
-            pHiP0Data[4+varlen+1] = tempCmd[0];
-            pHiP0Data[4+varlen+1+1] = tempCmd[1];
+            sn = *(int32 *)&pHiP0Data[4+varlen+1 + sizeof(cmd)];
+            sn = ntohl(sn);
+            Cloud_SetClientAttrs(pgc, clientid, cmd, sn);
+        }
+        else if( cmd == 0x0090 )
+        {
+            sn = 0;
+            Cloud_SetClientAttrs(pgc, clientid, cmd, sn);
         }
         return HiP0DataLen;
     }
@@ -427,7 +452,7 @@ int32 Mqtt_DispatchPublishPacket( pgcontext pgc,u8 *packetBuffer,int32 packetLen
             case 0x0211:
                 //todo MCU OTA.
                 GAgent_Printf( GAGENT_DEBUG,"M2M cmd to check OTA!!! ");
-                GAgent_SetCloudConfigStatus( pgc,CLOUD_RES_GET_TARGET_FID ); 
+                GAgent_SetCloudConfigStatus( pgc,CLOUD_RES_GET_SOFTVER); 
             break;
             default:
             break;

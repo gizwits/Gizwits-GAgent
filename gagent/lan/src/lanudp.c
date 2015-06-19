@@ -1,6 +1,7 @@
 #include "gagent.h"
 #include "lan.h"
 #include "lanudp.h"
+#include "3rdlan.h"
 #include "mqttlib.h"
 
 static void Lan_dispatchUdpData(pgcontext pgc, struct sockaddr_t *paddr,ppacket prxBuf, int32 recLen);
@@ -33,17 +34,20 @@ void Lan_udpDataHandle(pgcontext pgc, ppacket prxBuf, int32 len)
 {
     struct sockaddr_t addr;
     int addrLen = sizeof(struct sockaddr_t);
-    int32 recLen;
-    if( pgc->ls.udpServerFd<0 )
-        return ;
-    if(FD_ISSET(pgc->ls.udpServerFd, &(pgc->rtinfo.readfd)))
+    int32 recLen=0;
+    if( pgc->ls.udpServerFd>0 )
     {
-        resetPacket(prxBuf);
-        recLen = Socket_recvfrom(pgc->ls.udpServerFd, prxBuf->phead, len,
-            &addr, (socklen_t *)&addrLen);
-        GAgent_Printf( GAGENT_INFO,"UDP RECEIVE LEN = %d",recLen );
-        Lan_dispatchUdpData(pgc, &addr, prxBuf , recLen);
+        if(FD_ISSET(pgc->ls.udpServerFd, &(pgc->rtinfo.readfd)))
+        {
+            resetPacket(prxBuf);
+            recLen = Socket_recvfrom(pgc->ls.udpServerFd, prxBuf->phead, len,
+                &addr, (socklen_t *)&addrLen);
+            GAgent_Printf( GAGENT_INFO,"UDP RECEIVE LEN = %d error=%d ",recLen,errno );
+            if( recLen<=0 ) return ;
+            Lan_dispatchUdpData(pgc, &addr, prxBuf , recLen);
+        }
     }
+
 }
 
 /****************************************************************
@@ -89,18 +93,32 @@ static void Lan_dispatchUdpData(pgcontext pgc, struct sockaddr_t *paddr,
             LAN_onDiscoverAck(pgc, prxBuf->phead, paddr);
             break;
         case GAGENT_LAN_CMD_ONBOARDING:
+        {
+            uint16 TempWiFiStatus = 0;
+            TempWiFiStatus = pgc->rtinfo.GAgentStatus;
+            
+            if( (TempWiFiStatus&WIFI_MODE_AP)!= WIFI_MODE_AP )
+                return ;
+            if( (TempWiFiStatus&WIFI_MODE_ONBOARDING)!= WIFI_MODE_ONBOARDING )
+                return ;
+            
             if(RET_SUCCESS != Lan_udpOnBoarding(pgc, prxBuf->phead + offsetPayload))
             {
                 GAgent_Printf(GAGENT_ERROR, "Invalid wifi_ssid or wifi_key  length");
             }
             else
             {
-                GAgent_DRVWiFi_StationCustomModeStart(pgc->gc.wifi_ssid, pgc->gc.wifi_key, WIFI_MODE_STATION);
+                TempWiFiStatus &=~ WIFI_MODE_ONBOARDING;
+                //GAgent_DRVWiFi_APModeStop( pgc );
+                GAgent_Printf( GAGENT_DEBUG,"file:%s function:%s line:%d ",__FILE__,__FUNCTION__,__LINE__ );
+                TempWiFiStatus = GAgent_DevCheckWifiStatus( TempWiFiStatus );
+                //GAgent_DRVWiFi_StationCustomModeStart(pgc->gc.wifi_ssid, pgc->gc.wifi_key, WIFI_MODE_STATION);
             }
             resetPacket(prxBuf);
             LAN_onBoardingAck(pgc, prxBuf->phead, paddr);
             
             break;
+        }
         default:
             break;
     }
@@ -125,7 +143,8 @@ static int32 Lan_udpOnBoarding(pgcontext pgc, uint8 *buf)
     pgc->gc.wifi_ssid[ssidlength] = '\0';
     strncpy(pgc->gc.wifi_key, (char *)(buf+2+ssidlength+2), passwdlength);
     pgc->gc.wifi_key[passwdlength] = '\0';
-
+    pgc->gc.flag |= XPG_CFG_FLAG_CONNECTED;
+    pgc->gc.flag |= XPG_CFG_FLAG_CONFIG;
     GAgent_DevSaveConfigData(&(pgc->gc));
 
     return RET_SUCCESS;

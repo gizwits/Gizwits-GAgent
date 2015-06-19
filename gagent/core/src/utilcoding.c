@@ -1,6 +1,7 @@
 #include "gagent.h"
 #include "lan.h"
 #include "mqttlib.h"
+#include "cloud.h"
 static uint8 g_SN;
 
 void make_rand(int8* data)
@@ -241,7 +242,7 @@ uint32 ParsePacket( ppacket pRxBuf )
         {
             pRxBuf->ppayload = pRxBuf->phead+4+varlen+1+2;
         }
-        if( cmd ==0x0093 )
+        if( cmd == 0x0093 )
         {//with sn.
             pRxBuf->ppayload = pRxBuf->phead+4+varlen+1+2+4;          
         }
@@ -258,7 +259,7 @@ uint32 ParsePacket( ppacket pRxBuf )
         /* head(0xffff)| len(2B) | cmd(1B) | sn(1B) | flag(2B) |  payload(xB) | checksum(1B) */
         pRxBuf->ppayload = pRxBuf->phead+8;   /* head + len + cmd + sn + flag */
         datalen = ( (int32)ntohs( *(uint16 *)(pRxBuf->phead + 2) ) ) & 0xffff;
-        pRxBuf->pend =  (pRxBuf->phead )+( datalen+4 ); /* datalen + head + len */
+        pRxBuf->pend =  (pRxBuf->phead )+( datalen+4-1 ); /* datalen + head + len -checksum */
 
         GAgent_Printf( GAGENT_DEBUG," ReSet Data Type : %04X - LOCAL_DATA_IN", pRxBuf->type );
         pRxBuf->type = SetPacketType( pRxBuf->type,LOCAL_DATA_IN,0 );
@@ -270,8 +271,14 @@ uint32 ParsePacket( ppacket pRxBuf )
     {
         datalen = mqtt_parse_rem_len( pRxBuf->phead+3 ); 
         varlen = mqtt_num_rem_len_bytes( pRxBuf->phead+3 );
-        
+
+        cmd = *(uint16 *)(pRxBuf->phead+LAN_PROTOCOL_HEAD_LEN+varlen+LAN_PROTOCOL_FLAG_LEN);
+        cmd = ntohs(cmd);
         pRxBuf->ppayload = pRxBuf->phead + LAN_PROTOCOL_HEAD_LEN + varlen + LAN_PROTOCOL_FLAG_LEN + LAN_PROTOCOL_CMD_LEN;
+        if( cmd == 0x0093 )
+        {//with sn.
+            pRxBuf->ppayload += LAN_PROTOCOL_SN_LEN;          
+        }
         pRxBuf->pend   = pRxBuf->phead + LAN_PROTOCOL_HEAD_LEN + varlen + datalen;
 
         GAgent_Printf( GAGENT_DEBUG," ReSet Data Type : %04X - LAN_TCP_DATA_IN", pRxBuf->type );
@@ -294,7 +301,8 @@ int8 dealPacket( pgcontext pgc, ppacket pTxBuf )
     if( ((pTxBuf->type)&(LOCAL_DATA_OUT)) == LOCAL_DATA_OUT )
     {
         GAgent_Printf( GAGENT_DEBUG,"packet Type : LOCAL_DATA_OUT ");
-        GAgent_LocalDataWriteP0( pgc,pgc->rtinfo.local.uart_fd, pTxBuf,MCU_CTRL_CMD );
+        copyPacket(pTxBuf, pgc->mcu.Txbuf);
+        GAgent_LocalDataWriteP0( pgc,pgc->rtinfo.local.uart_fd, pgc->mcu.Txbuf,MCU_CTRL_CMD );
         GAgent_Printf( GAGENT_DEBUG,"ReSetpacket Type : LOCAL_DATA_OUT ");
         pTxBuf->type = SetPacketType(pTxBuf->type, LOCAL_DATA_OUT, 0);
 
@@ -318,4 +326,64 @@ int8 dealPacket( pgcontext pgc, ppacket pTxBuf )
     return 0;
 }
 
+void copyPacket(ppacket psrcPacket, ppacket pdestPacket)
+{
+    if(NULL == psrcPacket || NULL == pdestPacket)
+    {
+        GAgent_Printf(GAGENT_WARNING,"func:%s,line:%d,buf is NULL!psrcPacket:0x%x, pdestPacket:0x%x",
+                    __FUNCTION__, __LINE__, psrcPacket, pdestPacket);
+
+        return ;
+    }
+
+    if(NULL == psrcPacket->allbuf || NULL == pdestPacket->allbuf)
+    {
+        GAgent_Printf(GAGENT_WARNING,"func:%s,line:%d,buf is NULL!psrcPacket->allbuf:0x%x,pdestPacket->allbuf:0x%x",
+                    __FUNCTION__, __LINE__,
+                    psrcPacket->allbuf,
+                    pdestPacket->allbuf);
+    }
+
+    pdestPacket->phead = pdestPacket->allbuf + (psrcPacket->phead - psrcPacket->allbuf);
+    pdestPacket->ppayload = pdestPacket->allbuf + (psrcPacket->ppayload - psrcPacket->allbuf);
+    pdestPacket->pend = pdestPacket->allbuf + (psrcPacket->pend - psrcPacket->allbuf);
+    memcpy(pdestPacket->phead, psrcPacket->phead, psrcPacket->pend - psrcPacket->phead);
+}
+
+void setChannelAttrs(pgcontext pgc, stCloudAttrs_t *cloudClient, stLanAttrs_t *lanClient, uint8 isBroadCast)
+{
+    if(isBroadCast)
+    {
+        pgc->rtinfo.stChannelAttrs.lanClient.fd = -1;
+        pgc->rtinfo.stChannelAttrs.lanClient.cmd = GAGENT_LAN_CMD_CTL_93;
+        pgc->rtinfo.stChannelAttrs.lanClient.sn = 0;
+
+        pgc->rtinfo.stChannelAttrs.cloudClient.phoneClientId[0] = '\0';
+        pgc->rtinfo.stChannelAttrs.cloudClient.cmd = GAGENT_LAN_CMD_CTL_93;
+        pgc->rtinfo.stChannelAttrs.cloudClient.sn = 0;
+
+    }
+    else
+    {
+        if(NULL != lanClient)
+        {
+            pgc->rtinfo.stChannelAttrs.lanClient = *lanClient;
+            pgc->rtinfo.stChannelAttrs.lanClient.cmd += 1;
+            Lan_ClearClientAttrs(pgc, &pgc->ls.srcAttrs);
+        }
+        if(NULL != cloudClient)
+        {
+            pgc->rtinfo.stChannelAttrs.cloudClient = *cloudClient;
+            pgc->rtinfo.stChannelAttrs.cloudClient.cmd += 1;
+            Cloud_ClearClientAttrs(pgc, &pgc->rtinfo.waninfo.srcAttrs);
+        }
+    }
+    
+}
+
+void clearChannelAttrs(pgcontext pgc)
+{
+    Lan_ClearClientAttrs( pgc, &pgc->rtinfo.stChannelAttrs.lanClient );
+    Cloud_ClearClientAttrs( pgc, &pgc->rtinfo.stChannelAttrs.cloudClient );
+}
 

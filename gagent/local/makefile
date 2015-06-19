@@ -28,12 +28,10 @@ CFLAGS += $(foreach dir,$(INC_PATH),-I$(dir))
 
 ifdef MY_DEFINE
 OBJS :=	$(SRC_DIR)/obj/hal_receive \
-	$(SRC_DIR)/obj/local \
-	$(SRC_DIR)/obj/mcu_common 
+	$(SRC_DIR)/obj/local
 else
 OBJS :=	$(SRC_DIR)/obj/hal_receive \
-	$(SRC_DIR)/obj/local_simu \
-	$(SRC_DIR)/obj/mcu_common 
+	$(SRC_DIR)/obj/local_simu
 endif
 
 OBJS := $(foreach obj,$(OBJS),$(obj).o)

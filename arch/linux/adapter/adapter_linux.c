@@ -1,5 +1,7 @@
 ﻿#include "gagent.h"
 #include "platform.h"
+#include "md5.h"
+#include "http.h"
 
 #define GAGENT_CONFIG_FILE "./config/gagent_config.config"
 void msleep(int m_seconds)
@@ -92,10 +94,12 @@ int8 GAgent_DevGetMacAddress( uint8* szmac )
     int sock_mac;
     struct ifreq ifr_mac;
     uint8 mac[6]={0};
+    
     if(szmac == NULL)
     {
         return -1;
     }
+    
     sock_mac = socket( AF_INET, SOCK_STREAM, 0 );
     if( sock_mac == -1)
     {
@@ -103,11 +107,13 @@ int8 GAgent_DevGetMacAddress( uint8* szmac )
         return (-1); 
     }
     memset(&ifr_mac,0,sizeof(ifr_mac));
+    
     /*get mac address*/
+
     strncpy(ifr_mac.ifr_name, NET_ADAPTHER , sizeof(ifr_mac.ifr_name)-1);
     if( (ioctl( sock_mac, SIOCGIFHWADDR, &ifr_mac)) < 0)
     {
-        printf("mac ioctl error/n");
+        perror("mac ioctl error:");
         return (-1);
     }
 
@@ -117,7 +123,15 @@ int8 GAgent_DevGetMacAddress( uint8* szmac )
     mac[3] = ifr_mac.ifr_hwaddr.sa_data[3];
     mac[4] = ifr_mac.ifr_hwaddr.sa_data[4];
     mac[5] = ifr_mac.ifr_hwaddr.sa_data[5];
-
+    
+    /*
+    mac[0] = 0x00;
+    mac[1] = 0x01;
+    mac[2] = 0x02;
+    mac[3] = 0x03;
+    mac[4] = 0x04;
+    mac[5] = 0x05;
+    */
     sprintf((char *)szmac,"%02X%02X%02X%02X%02X%02X",mac[0],mac[1],mac[2],mac[3],mac[4],mac[5]);
     close( sock_mac );
     return 0;
@@ -151,6 +165,23 @@ uint32 GAgent_DevSaveConfigData( gconfig *pConfig )
     close(fd);
     return 0;
 }
+
+uint32 GAgent_SaveUpgradFirmware( int offset,uint8 *buf,int len )
+{
+    int fd;  
+    fd = open("ota.bin", O_CREAT | O_RDWR, S_IRWXU);
+    if(-1 == fd)
+    {
+        printf("open file fail\r\n");
+        return -1;
+    }
+    
+    lseek(fd , offset , SEEK_SET);
+    write(fd, buf, len);
+    close(fd);
+    return 0;
+}
+
 void WifiStatusHandler(int event)
 {
 
@@ -245,9 +276,37 @@ int32 GAgent_connect( int32 iSocketId, uint16 port,
     else 
     return  -1;
 }
-int8 GAgent_DRVGetWiFiMode( pgcontext pgc )
+/****************************************************************
+FunctionName    :   GAgent_DRVBootConfigWiFiMode.
+Description     :   获取上电前设置的WiFi运行模式,此函数对需要上电需要
+                    确定运行模式的模块有用。对于可以热切换模式的平台，
+                    此处返回0.
+return          :   1-boot预先设置为STA运行模式
+                    2-boot预先设置为AP运行模式
+                    3-boot预先设置为STA+AP模式运行
+                    >3 保留值。
+Add by Alex.lin     --2015-06-01                    
+****************************************************************/
+int8 GAgent_DRVBootConfigWiFiMode( void )
 {
-    return ( pgc->gc.flag  |= XPG_CFG_FLAG_CONNECTED ); 
+    return 0;
+}
+/****************************************************************
+FunctionName    :   GAgent_DRVGetWiFiMode.
+Description     :   通过判断pgc->gc.flag  |= XPG_CFG_FLAG_CONNECTED，
+                    是否置位来判断GAgent是否要启用STA 或 AP模式.
+pgc             :   全局变量.
+return          :   1-boot预先设置为STA运行模式
+                    2-boot预先设置为AP运行模式
+                    3-boot预先设置为STA+AP模式运行
+                    >3 保留值。
+Add by Alex.lin     --2015-06-01                    
+****************************************************************/
+int8 GAgent_DRVGetWiFiMode( pgcontext pgc )
+{ 
+    //linux x86默认运行STA模式.
+    pgc->gc.flag |=XPG_CFG_FLAG_CONNECTED;
+    return 1;
 }
 //return the new wifimode 
 int8 GAgent_DRVSetWiFiStartMode( pgcontext pgc,uint32 mode )
@@ -301,6 +360,9 @@ int16 GAgent_DRVWiFi_StationDisconnect()
 }
 void GAgent_DRVWiFi_APModeStop( pgcontext pgc )
 {
+    uint16 tempStatus=0;
+    tempStatus = pgc->rtinfo.GAgentStatus;
+    tempStatus = GAgent_DevCheckWifiStatus( tempStatus );
     return ;
 }
 void GAgent_DRVWiFiPowerScan( pgcontext pgc )
@@ -373,6 +435,128 @@ NetHostList_str *GAgentDRVWiFiScanResult( NetHostList_str *aplist )
     /* 申请内存，用于保存热点列表 */
     return NULL;
 }
+uint32 GAgent_OTAByUrl( pgcontext pgc,int32 socketid,int8 *sMD5,int32 *filelen )
+{
+    int ret;
+    uint8 *httpReceiveBuf = NULL;
+    int headlen = 0;
+    char MD5[16] = {0};
+    uint8 md5_calc[16] = {0};
+    int offset = 0;
+    uint8 *buf = NULL;
+    int writelen = 0;
+    MD5_CTX ctx;
+
+    httpReceiveBuf = malloc(SOCKET_RECBUFFER_LEN);
+    if(httpReceiveBuf == NULL)
+    {
+        GAgent_Printf(GAGENT_INFO, "[CLOUD]%s malloc fail!len:%d", __func__, SOCKET_RECBUFFER_LEN);
+        return RET_FAILED;
+    }
+
+    ret = Http_ReadSocket( socketid, httpReceiveBuf, SOCKET_RECBUFFER_LEN );  
+    if(ret <=0 ) 
+    { 
+        free(httpReceiveBuf);
+        return RET_FAILED;
+    }
+    
+    ret = Http_Response_Code( httpReceiveBuf );
+    if(200 != ret)
+    {
+        free(httpReceiveBuf);
+        return RET_FAILED;
+    }
+    headlen = Http_HeadLen( httpReceiveBuf );
+    *filelen = Http_BodyLen( httpReceiveBuf );
+    Http_GetMD5( httpReceiveBuf,MD5,sMD5);
+    Http_GetSV( httpReceiveBuf,(char *)pgc->mcu.soft_ver);
+  
+    offset = 0;
+    buf = httpReceiveBuf + headlen;
+    writelen = SOCKET_RECBUFFER_LEN - headlen;
+    MD5Init(&ctx);
+    do
+    {
+        ret = GAgent_SaveUpgradFirmware( offset, buf, writelen );
+        if(ret < 0)
+        {
+            GAgent_Printf(GAGENT_INFO, "[CLOUD]%s OTA upgrad fail at off:0x%x", __func__, offset);
+            free(httpReceiveBuf);
+            return -1;
+        }
+        offset += writelen;
+        MD5Update(&ctx, buf, writelen);
+        writelen = *filelen - offset;
+        if(0 == writelen)
+            break;
+        if(writelen > SOCKET_RECBUFFER_LEN)
+        {
+            writelen = SOCKET_RECBUFFER_LEN;
+        }
+        writelen = Http_ReadSocket( socketid, httpReceiveBuf, writelen );    
+        if(writelen <= 0 )
+        {
+            GAgent_Printf(GAGENT_INFO,"[CLOUD]%s, socket recv ota file fail!recived:0x%x", __func__, offset);
+            free(httpReceiveBuf);
+            return -1;
+        }
+        buf = httpReceiveBuf;
+    }while(offset < *filelen);
+    MD5Final(&ctx, md5_calc);
+    if(memcmp(MD5, md5_calc, 16) != 0)
+    {
+        GAgent_Printf(GAGENT_WARNING,"[CLOUD]md5 fail!");
+        free(httpReceiveBuf);
+        return RET_FAILED;
+    }
+    free(httpReceiveBuf);
+    return RET_SUCCESS;
+}
+int32 Http_ReqGetFirmware( int8 *downloadurl,int32 socketid )
+{
+    static int8 *getBuf = NULL;
+    int32 totalLen=0;
+    int32 ret=0;
+    int8 url[30] = {0};
+    int8 host[30] = {0};
+    Http_GetHost( downloadurl, host, url );
+    getBuf = (int8*)malloc( 200 );
+    if(getBuf == NULL)
+    {
+        return RET_FAILED;
+    }
+    memset( getBuf,0,200 );
+    snprintf( getBuf,200,"%s %s %s%s%s %s%s%s%s",
+              "GET",url,"HTTP/1.1",kCRLFNewLine,
+              "Host:",host,kCRLFNewLine,
+              "Content-Type: application/text",kCRLFLineEnding);
+    totalLen =strlen( getBuf );
+    ret = send( socketid, getBuf,totalLen,0 );
+    free(getBuf); 
+//    free(host);
+//    free(url);
+    getBuf = NULL;
+    if(ret<=0 ) 
+    {
+        return RET_FAILED;
+    }
+    else
+    {
+        return RET_SUCCESS;
+    }    
+}
+
+
+int32 GAgent_StartUpgrade()
+{
+ //TODO    
+ 
+ remove("./ota.bin");
+ return 0;
+}
+
+
 /*
 void Socket_CreateTCPServer(int tcp_port)
 {

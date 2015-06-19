@@ -34,6 +34,8 @@ uint32 Cloud_JD_Post_ResFeed_Key( pgcontext pgc,int32 respondCode );
 int32 Cloud_ReadGServerConfigData( pgcontext pgc ,int32 socket,uint8 *buf,int32 buflen );
 uint32 Cloud_ConfigDataHandle( pgcontext pgc );
 int32 Cloud_M2MDataHandle(  pgcontext pgc,ppacket pbuf /*, ppacket poutBuf*/, uint32 buflen);
-uint32 Cloud_isNeedOTA( int8 *sFV );
+uint32 Cloud_isNeedOTA( pgcontext pgc, int type, int8 *sFV );
 void Log2Cloud(pgcontext pgc);
+void Cloud_ClearClientAttrs(pgcontext pgc, stCloudAttrs_t *client);
+void Cloud_SetClientAttrs(pgcontext pgc, uint8 *clientid, uint16 cmd, int32 sn);
 #endif

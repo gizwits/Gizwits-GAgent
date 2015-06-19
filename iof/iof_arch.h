@@ -22,17 +22,22 @@ void GAgent_LocalDataIOInit( pgcontext pgc );
 uint16 GAgent_DevCheckWifiStatus( uint16 wifistatus  );
 void GAgent_OpenAirlink( int32 timeout_s );
 void GAgent_AirlinkResult( pgcontext pgc );
+int8 GAgent_DRVBootConfigWiFiMode( void );
 int8 GAgent_DRVGetWiFiStartMode( pgcontext pgc );
 int8 GAgent_DRVSetWiFiStartMode( pgcontext pgc,uint32 mode );
 int16 GAgent_DRV_WiFi_SoftAPModeStart( const int8* ap_name,const int8 *ap_password,int16 wifiStatus );
 int16 GAgent_DRVWiFi_StationCustomModeStart(int8 *StaSsid,int8 *StaPass,uint16 wifiStatus );
 int16 GAgent_DRVWiFi_StationDisconnect();
 void GAgent_DRVWiFi_APModeStop( pgcontext pgc );
-void GAgent_DRVWiFiStartScan( );
-void GAgent_DRVWiFiStopScan( );
+void GAgent_DRVWiFiStartScan( void );
+void GAgent_DRVWiFiStopScan( void );
 NetHostList_str *GAgentDRVWiFiScanResult( NetHostList_str *aplist );
 void GAgent_DRVWiFiPowerScan( pgcontext pgc );
 int8 GAgent_DRVWiFiPowerScanResult( pgcontext pgc );
+uint32 GAgent_OTAByUrl( pgcontext pgc,int32 socketid,int8 *sMD5,int32 *filelen );
+int32 GAgent_StartUpgrade();
+
+
 /*********Net socket function************/
 uint32 GAgent_GetHostByName( int8 *domain, int8 *IPAddress );
 int32  GAgent_accept( int32 sockfd );

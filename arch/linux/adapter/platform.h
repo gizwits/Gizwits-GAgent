@@ -29,8 +29,8 @@
 #include "hal_uart.h"
 #include "gagent_typedef.h"
 
-#define WIFI_SOFTVAR    "04010004"
-#define WIFI_HARDVER    "00-LINUX"
+#define WIFI_SOFTVAR    "04010005"
+#define WIFI_HARDVER    "000LINUX"
 
 #define UART_NAME       "/dev/ttyUSB0"
 #define NET_ADAPTHER    "eth0"

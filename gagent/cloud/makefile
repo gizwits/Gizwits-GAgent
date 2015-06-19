@@ -31,8 +31,8 @@ OBJS :=	$(SRC_DIR)/obj/cloud \
 	$(SRC_DIR)/obj/http \
 	$(SRC_DIR)/obj/mqttbase \
 	$(SRC_DIR)/obj/mqttlib \
-	$(SRC_DIR)/obj/mqttxpg
-
+	$(SRC_DIR)/obj/mqttxpg	\
+	$(SRC_DIR)/obj/md5
 OBJS := $(foreach obj,$(OBJS),$(obj).o)
 
 $(SRC_DIR)/obj/%.o: $(SRC_DIR)/%.c

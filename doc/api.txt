@@ -8,7 +8,6 @@
     uint32_t GAgent_Lan_Send( uint8_t *buf,uint32_t buflen );
     uint32_t GAgent_Lan_GetPacket(uint8_t *buf, uint32_t* buflen)
     uint32_t GAgent_Local_Send( uint8_t *buffer, uint32_t* buflen );
-    uint32_t GAgent_Local_GetPacket( uint8_t *buffer, uint32_t* buflen );
     void GAgent_WiFiEvenHandle(int16_t wifistatus,int32_t cloudstatus);
     void GAgent_CheckNewClient();
     uint16_t GAgent_GetWiFiStatus( void );

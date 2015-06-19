@@ -30,12 +30,14 @@ ifdef MY_DEFINE_LAN
 OBJS :=	$(SRC_DIR)/obj/lan \
 	$(SRC_DIR)/obj/lantcp \
 	$(SRC_DIR)/obj/lanudp \
-	$(SRC_DIR)/obj/webconfig
+	$(SRC_DIR)/obj/webconfig\
+	$(SRC_DIR)/obj/3rdlan
 else
 OBJS :=	$(SRC_DIR)/obj/lan_cut \
 	$(SRC_DIR)/obj/lantcp \
 	$(SRC_DIR)/obj/lanudp \
-	$(SRC_DIR)/obj/webconfig
+	$(SRC_DIR)/obj/webconfig\
+	$(SRC_DIR)/obj/3rdlan
 endif
 
 OBJS := $(foreach obj,$(OBJS),$(obj).o)

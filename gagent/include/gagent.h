@@ -31,7 +31,7 @@ extern pgcontext pgContextData;
 #define RET_SUCCESS (0)
 #define RET_FAILED  (-1)
 #define GAGENT_BUF_LEN  1024
-#define SOCKET_RECBUFFER_LEN (1*1024)
+#define SOCKET_RECBUFFER_LEN (1*600)
 #define SOCKET_TCPSOCKET_BUFFERSIZE    (1*1024)
 
 
@@ -39,14 +39,15 @@ extern pgcontext pgContextData;
 #define GAGENT_TCP_SERVER_PORT          12416
 #define LAN_UDP_SERVER_PORT             12414
 #define LAN_UDP_BROADCAST_SERVER_PORT   2415
+#define LAN_UDP_SERVER_PORT_JD            80 //4320 or 80 
 
 #define LAN_TCPCLIENT_MAX           8       /* max 8 tcp socket */
 #define LAN_CLIENT_MAXLIVETIME      14      /* 14S,timeout */
 #define FIRMWARE_LEN_MAX            32
 
 //add by Frank liu 20150414
-#define INVALID_SOCKET	(-1)
-#define SOCKET_ERROR	(-1)
+#define INVALID_SOCKET  (-1)
+#define SOCKET_ERROR    (-1)
 #define SEND_UDP_DATA_TIMES 30
 
 //GAgentStatus
@@ -65,8 +66,8 @@ extern pgcontext pgContextData;
 #define CLOUD_RES_GET_DID          3
 #define CLOUD_REQ_PROVISION        4
 #define CLOUD_RES_PROVISION        5
-#define CLOUD_REQ_GET_TARGET_FID   6
-#define CLOUD_RES_GET_TARGET_FID   7
+#define CLOUD_REQ_GET_SOFTVER      6
+#define CLOUD_RES_GET_SOFTVER      7
 #define CLOUD_REQ_OTA              8
 #define CLOUD_RES_OTA              9
 
@@ -97,7 +98,7 @@ extern pgcontext pgContextData;
 #define GAGENT_MQTT_TIMEOUT        (5*ONE_SECOND)
 #define GAGENT_STA_SCANTIME        (3*ONE_MINUTE)
 #define GAGENT_AP_SCANTIME         (15*ONE_SECOND)
-
+#define GAGENT_ONBOARDING_TIME     (5*ONE_MINUTE)
 /*Gizwits heartbeat with eath others, Cloud, SDK/Demo, GAgent and MCU*/
 #define MCU_HEARTBEAT           (55*ONE_SECOND)
 
@@ -165,6 +166,17 @@ extern pgcontext pgContextData;
 #define MCU_REQ_GSERVER_TIME     0x17
 #define MCU_REQ_GSERVER_TIME_ACK 0x18
 
+#define MCU_NEED_UPGRADE     0x19
+#define MCU_NEED_UPGRADE_ACK 0x1A
+
+#define MCU_READY_RECV_FIRMWARE    0x1B
+#define MCU_READY_RECV_FIRMWARE_ACK 0x1C
+
+#define GAGENT_SEND_UPGRADE     0x1E
+#define GAGENT_SEND_UPGRADE_ACK 0x1F
+
+
+
 /*
  * | head(0xffff) | len(2B) | cmd(2B) | SN(1B) | flag(2B) | payload(xB) | checksum(1B) |
  *     0xffff     cmd~checksum                                            len~payload
@@ -212,7 +224,7 @@ void GAgent_dumpInfo( pgcontext pgc );
 int32 GAgent_Cloud_GetPacket( pgcontext pgc,ppacket pbuf , int32 buflen);
 void GAgent_Cloud_Handle( pgcontext pgc, ppacket Rxbuf,int32 length );
 uint32 GAgent_Cloud_SendData( pgcontext pgc,ppacket pbuf, int32 buflen );
-uint32 GAgent_Cloud_OTAByUrl( int32 socketid,int8 *downloadUrl );
+uint32 GAgent_Cloud_OTAByUrl( pgcontext pgc,int32 socketid,int8 *downloadUrl,int8 *sMD5,int32 *filelen );
 uint32 GAgent_Cloud_Disconnect();
 /********************************************** GAgent Lan API **********************************************/
 uint32 GAgent_Lan_Handle(pgcontext pgc, ppacket prxBuf, int32 len);
@@ -227,7 +239,6 @@ void GAgent_RegisterReceiveDataHook( pfMasterMCU_ReciveData fun );
 void GAgent_RegisterSendDataHook( pfMasertMCU_SendData fun );
 void GAgent_LocalInit( pgcontext pgc );
 void GAgent_LocalSendGAgentstatus(pgcontext pgc,uint32 dTime_s );
-int32 GAgent_Local_GetPacket( pgcontext pgc, ppacket Rxbuf );
 int32 GAgent_LocalDataWriteP0( pgcontext pgc,int32 fd,ppacket pTxBuf,uint8 cmd );
 void GAgent_Local_Handle( pgcontext pgc,ppacket Rxbuf,int32 length );
 void GAgent_Clean_Config( pgcontext pgc );

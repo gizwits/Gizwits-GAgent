@@ -1,3 +1,12 @@
+04010005版本changelog：
+1、新增GAgent同APP/云端业务指令交互时的ACK回复指令；
+2、修复串口通信不能处理连包的问题；
+3、新增OTA4.1版本的支持；
+4、新增OTA4.1版本对MCU进行升级文件传输的支持；
+5、新增对接JD云的支持；
+6、修复不能进入softAP配置模式的bug；
+7、修复GAgent_WiFiEventTick 里面退出实现，导致获取到的wifi底层状态不是预期状态的bug
+
 04010004版本changelog:
 1.修改Makfile支持模块/特性可剪裁.LOCAL模块可裁剪,LAN模块可裁剪.
 2.修复http创建成功之后连接失败没有关闭socket的bug.
