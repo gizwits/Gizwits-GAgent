@@ -146,6 +146,12 @@ typedef struct
     stCloudAttrs_t cloudClient;
 }stChannelAttrs_t;
 
+typedef struct 
+{
+   uint8 cmd;
+   uint8 sn;
+}localTxbufInfo;
+
 /* MCU信息 */
 typedef struct _XPG_MCU
 {
@@ -165,8 +171,7 @@ typedef struct _XPG_MCU
     uint8   soft_ver[MCU_SOFTVER_LEN+1];
     uint8   product_key[PK_LEN+1];
     uint8   mcu_attr[MCU_MCUATTR_LEN];
-
-    ppacket Txbuf;/* send data to local buf */
+    localTxbufInfo TxbufInfo;   
 }XPG_MCU;
 
 typedef struct _wifiStatus
@@ -227,6 +232,7 @@ typedef struct runtimeinfo_t
     uint32 updatestatusinterval;
     uint32 testLastTimeStamp;
     uint32 wifiLastScanTime;
+    uint32 filelen;
 
     uint16 GAgentStatus;/* gagentStatus */
     uint16 lastGAgentStatus;
@@ -236,6 +242,7 @@ typedef struct runtimeinfo_t
     int8 loglevel;
     uint8 scanWifiFlag;
     int8 firstStartUp;
+    int8 *MD5;
 
     wifistatus devWifiStatus;
     

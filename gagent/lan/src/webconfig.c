@@ -102,16 +102,11 @@ int32 handleWebConfig( pgcontext pgc,int32 fd)
 
             send(fd, buf_head, strlen(buf_head), 0);
             send(fd, buf_body, strlen(buf_body), 0);
-            
-            //pgc->rtinfo.GAgentStatus &=~ WIFI_MODE_AP;
-            TempWiFiStatus = pgc->rtinfo.GAgentStatus;
-            TempWiFiStatus &=~ WIFI_MODE_ONBOARDING;
+            msleep(500);
             GAgent_DRVWiFi_APModeStop( pgc );
             GAgent_Printf( GAGENT_INFO,"webconfig ssid:%s key:%s",pConfigData->wifi_ssid,pConfigData->wifi_key );
             GAgent_Printf( GAGENT_DEBUG,"file:%s function:%s line:%d ",__FILE__,__FUNCTION__,__LINE__ );
-            //TempWiFiStatus |= GAgent_DRVWiFi_StationCustomModeStart( pgc->gc.wifi_ssid,pgc->gc.wifi_key,TempWiFiStatus );
-            TempWiFiStatus = GAgent_DevCheckWifiStatus( TempWiFiStatus );
-            msleep(100);
+            TempWiFiStatus = GAgent_DevCheckWifiStatus( WIFI_MODE_ONBOARDING,0 );
         }
     }
     free(buf_head);

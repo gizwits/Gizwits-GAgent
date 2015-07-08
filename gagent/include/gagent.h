@@ -18,7 +18,7 @@ extern pgcontext pgContextData;
 
 #define GAGENT_TEST_AP1        "GIZWITS_TEST_1"
 #define GAGENT_TEST_AP2        "GIZWITS_TEST_2"
-#define GAGENT_TEST_AP_PASS    "GIZWITS_TEST_PASS" 
+#define GAGENT_TEST_AP_PASS    "GIZWITS_TEST_PASS"
 
 /*For GAgent Defined SoftAP*/
 #define AP_NAME             "XPG-GAgent-"
@@ -129,6 +129,7 @@ extern pgcontext pgContextData;
 #define XPG_CFG_FLAG_CONFIGSUCCESS  (1<<3) /* 使用外部配置方式是否成功。需要用来进行上电宣告。注意和CONFIG的区别 */
 #define CFG_FLAG_TESTMODE           (1<<4)
 #define XPG_CFG_FLAG_CONFIG_AIRKISS (1<<5) /* 平台用来标示是否airkiss配置过 需要发送airkiss配置包*/
+#define XPG_CFG_FLAG_CONFIG_AP      (1<<6) /* 表示是否出牙softap可配置状态 */
 
 #define ERRORCODE GAgent_Printf(GAGENT_ERROR,"%s %d",__FUNCTION__,__LINE__ );
 
@@ -172,9 +173,11 @@ extern pgcontext pgContextData;
 #define MCU_READY_RECV_FIRMWARE    0x1B
 #define MCU_READY_RECV_FIRMWARE_ACK 0x1C
 
-#define GAGENT_SEND_UPGRADE     0x1E
-#define GAGENT_SEND_UPGRADE_ACK 0x1F
+#define GAGENT_SEND_UPGRADE     0x1D
+#define GAGENT_SEND_UPGRADE_ACK 0x1E
 
+#define GAGENT_STOP_SEND     0x1F
+#define GAGENT_STOP_SEND_ACK 0x20
 
 
 /*
@@ -219,12 +222,13 @@ int connect_mqtt_socket(int iSocketId, struct sockaddr_t *Msocket_address, unsig
 void GAgent_Init( pgcontext *pgc );
 void GAgent_VarInit( pgcontext *pgc );
 void GAgent_WiFiInit( pgcontext pgc );
+uint16 GAgent_DevCheckWifiStatus( uint16 wifistatus,int8 flag  );
 void GAgent_dumpInfo( pgcontext pgc );
 /********************************************** GAgent Cloud API **********************************************/
 int32 GAgent_Cloud_GetPacket( pgcontext pgc,ppacket pbuf , int32 buflen);
 void GAgent_Cloud_Handle( pgcontext pgc, ppacket Rxbuf,int32 length );
 uint32 GAgent_Cloud_SendData( pgcontext pgc,ppacket pbuf, int32 buflen );
-uint32 GAgent_Cloud_OTAByUrl( pgcontext pgc,int32 socketid,int8 *downloadUrl,int8 *sMD5,int32 *filelen );
+int32 GAgent_Cloud_OTAByUrl( pgcontext pgc,int8 *downloadUrl,OTATYPE otatype );
 uint32 GAgent_Cloud_Disconnect();
 /********************************************** GAgent Lan API **********************************************/
 uint32 GAgent_Lan_Handle(pgcontext pgc, ppacket prxBuf, int32 len);
@@ -243,7 +247,8 @@ int32 GAgent_LocalDataWriteP0( pgcontext pgc,int32 fd,ppacket pTxBuf,uint8 cmd )
 void GAgent_Local_Handle( pgcontext pgc,ppacket Rxbuf,int32 length );
 void GAgent_Clean_Config( pgcontext pgc );
 
-void GAgent_logevelSet( uint16 level );
+
+void GAgent_loglevelSet( uint16 level );
 void GAgent_SetWiFiStatus( pgcontext pgc,uint16 wifistatus,int8 flag );
 void GAgent_SetCloudConfigStatus( pgcontext pgc,int16 cloudstauts );
 void GAgent_SetCloudServerStatus( pgcontext pgc,int16 serverstatus );

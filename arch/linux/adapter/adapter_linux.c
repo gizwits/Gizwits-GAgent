@@ -1,7 +1,8 @@
 ﻿#include "gagent.h"
 #include "platform.h"
-#include "md5.h"
 #include "http.h"
+#include "cloud.h"
+#include "netevent.h"
 
 #define GAGENT_CONFIG_FILE "./config/gagent_config.config"
 void msleep(int m_seconds)
@@ -13,7 +14,6 @@ uint32 GAgent_GetHostByName( int8 *domain, int8 *IPAddress)
     struct hostent *hptr;
     char   **pptr;
     char   str[32];
-
     memset(str, 0x0, sizeof(str));
     hptr = gethostbyname2(domain, AF_INET);
     if (hptr == NULL)
@@ -165,21 +165,38 @@ uint32 GAgent_DevSaveConfigData( gconfig *pConfig )
     close(fd);
     return 0;
 }
-
-uint32 GAgent_SaveUpgradFirmware( int offset,uint8 *buf,int len )
+uint32 GAgent_SaveFile( int offset,uint8 *buf,int len )
 {
     int fd;  
     fd = open("ota.bin", O_CREAT | O_RDWR, S_IRWXU);
     if(-1 == fd)
     {
         printf("open file fail\r\n");
-        return -1;
+        return RET_FAILED;
     }
-    
     lseek(fd , offset , SEEK_SET);
     write(fd, buf, len);
     close(fd);
-    return 0;
+    return RET_SUCCESS;
+}
+uint32 GAgent_ReadFile( uint16 offset,int8* buf,int32 len )
+{
+    int fd;
+    int ret;
+    if((fd = open("ota.bin",O_RDONLY))==-1)
+    {
+    	GAgent_Printf(GAGENT_WARNING,"Can't open the ota.bin file\n");
+    	return RET_FAILED;
+    }
+    lseek( fd, offset, SEEK_SET );
+    ret = read( fd, buf, len );
+    close(fd);
+    return ret;
+}
+
+uint32 GAgent_SaveUpgradFirmware( int offset,uint8 *buf,int len )
+{
+    return GAgent_SaveFile( offset, buf, len );
 }
 
 void WifiStatusHandler(int event)
@@ -341,15 +358,14 @@ void GAgent_LocalDataIOInit( pgcontext pgc )
 
 int16 GAgent_DRV_WiFi_SoftAPModeStart( const int8* ap_name,const int8 *ap_password,int16 wifiStatus )
 {
-    wifiStatus &=~ WIFI_STATION_CONNECTED;
-    wifiStatus |= WIFI_MODE_AP;
-    wifiStatus = GAgent_DevCheckWifiStatus( wifiStatus  );    
+    GAgent_DevCheckWifiStatus( WIFI_STATION_CONNECTED,0 );
+    GAgent_DevCheckWifiStatus( WIFI_MODE_AP,1 );
     return WIFI_MODE_AP;
 }
 int16 GAgent_DRVWiFi_StationCustomModeStart(int8 *StaSsid,int8 *StaPass,uint16 wifiStatus )
 {
-    wifiStatus |= WIFI_STATION_CONNECTED;
-    wifiStatus = GAgent_DevCheckWifiStatus( wifiStatus  );
+    GAgent_DevCheckWifiStatus( WIFI_STATION_CONNECTED,1 );
+    GAgent_DevCheckWifiStatus( WIFI_MODE_STATION,1 );
     GAgent_Printf( GAGENT_INFO," Station ssid:%s StaPass:%s",StaSsid,StaPass );
     return WIFI_STATION_CONNECTED;
     //return 0;
@@ -360,9 +376,10 @@ int16 GAgent_DRVWiFi_StationDisconnect()
 }
 void GAgent_DRVWiFi_APModeStop( pgcontext pgc )
 {
-    uint16 tempStatus=0;
+/*  uint16 tempStatus=0;
     tempStatus = pgc->rtinfo.GAgentStatus;
-    tempStatus = GAgent_DevCheckWifiStatus( tempStatus );
+    tempStatus = GAgent_DevCheckWifiStatus( tempStatus );*/
+    GAgent_DevCheckWifiStatus( WIFI_MODE_AP,0 );
     return ;
 }
 void GAgent_DRVWiFiPowerScan( pgcontext pgc )
@@ -435,118 +452,6 @@ NetHostList_str *GAgentDRVWiFiScanResult( NetHostList_str *aplist )
     /* 申请内存，用于保存热点列表 */
     return NULL;
 }
-uint32 GAgent_OTAByUrl( pgcontext pgc,int32 socketid,int8 *sMD5,int32 *filelen )
-{
-    int ret;
-    uint8 *httpReceiveBuf = NULL;
-    int headlen = 0;
-    char MD5[16] = {0};
-    uint8 md5_calc[16] = {0};
-    int offset = 0;
-    uint8 *buf = NULL;
-    int writelen = 0;
-    MD5_CTX ctx;
-
-    httpReceiveBuf = malloc(SOCKET_RECBUFFER_LEN);
-    if(httpReceiveBuf == NULL)
-    {
-        GAgent_Printf(GAGENT_INFO, "[CLOUD]%s malloc fail!len:%d", __func__, SOCKET_RECBUFFER_LEN);
-        return RET_FAILED;
-    }
-
-    ret = Http_ReadSocket( socketid, httpReceiveBuf, SOCKET_RECBUFFER_LEN );  
-    if(ret <=0 ) 
-    { 
-        free(httpReceiveBuf);
-        return RET_FAILED;
-    }
-    
-    ret = Http_Response_Code( httpReceiveBuf );
-    if(200 != ret)
-    {
-        free(httpReceiveBuf);
-        return RET_FAILED;
-    }
-    headlen = Http_HeadLen( httpReceiveBuf );
-    *filelen = Http_BodyLen( httpReceiveBuf );
-    Http_GetMD5( httpReceiveBuf,MD5,sMD5);
-    Http_GetSV( httpReceiveBuf,(char *)pgc->mcu.soft_ver);
-  
-    offset = 0;
-    buf = httpReceiveBuf + headlen;
-    writelen = SOCKET_RECBUFFER_LEN - headlen;
-    MD5Init(&ctx);
-    do
-    {
-        ret = GAgent_SaveUpgradFirmware( offset, buf, writelen );
-        if(ret < 0)
-        {
-            GAgent_Printf(GAGENT_INFO, "[CLOUD]%s OTA upgrad fail at off:0x%x", __func__, offset);
-            free(httpReceiveBuf);
-            return -1;
-        }
-        offset += writelen;
-        MD5Update(&ctx, buf, writelen);
-        writelen = *filelen - offset;
-        if(0 == writelen)
-            break;
-        if(writelen > SOCKET_RECBUFFER_LEN)
-        {
-            writelen = SOCKET_RECBUFFER_LEN;
-        }
-        writelen = Http_ReadSocket( socketid, httpReceiveBuf, writelen );    
-        if(writelen <= 0 )
-        {
-            GAgent_Printf(GAGENT_INFO,"[CLOUD]%s, socket recv ota file fail!recived:0x%x", __func__, offset);
-            free(httpReceiveBuf);
-            return -1;
-        }
-        buf = httpReceiveBuf;
-    }while(offset < *filelen);
-    MD5Final(&ctx, md5_calc);
-    if(memcmp(MD5, md5_calc, 16) != 0)
-    {
-        GAgent_Printf(GAGENT_WARNING,"[CLOUD]md5 fail!");
-        free(httpReceiveBuf);
-        return RET_FAILED;
-    }
-    free(httpReceiveBuf);
-    return RET_SUCCESS;
-}
-int32 Http_ReqGetFirmware( int8 *downloadurl,int32 socketid )
-{
-    static int8 *getBuf = NULL;
-    int32 totalLen=0;
-    int32 ret=0;
-    int8 url[30] = {0};
-    int8 host[30] = {0};
-    Http_GetHost( downloadurl, host, url );
-    getBuf = (int8*)malloc( 200 );
-    if(getBuf == NULL)
-    {
-        return RET_FAILED;
-    }
-    memset( getBuf,0,200 );
-    snprintf( getBuf,200,"%s %s %s%s%s %s%s%s%s",
-              "GET",url,"HTTP/1.1",kCRLFNewLine,
-              "Host:",host,kCRLFNewLine,
-              "Content-Type: application/text",kCRLFLineEnding);
-    totalLen =strlen( getBuf );
-    ret = send( socketid, getBuf,totalLen,0 );
-    free(getBuf); 
-//    free(host);
-//    free(url);
-    getBuf = NULL;
-    if(ret<=0 ) 
-    {
-        return RET_FAILED;
-    }
-    else
-    {
-        return RET_SUCCESS;
-    }    
-}
-
 
 int32 GAgent_StartUpgrade()
 {
@@ -555,7 +460,50 @@ int32 GAgent_StartUpgrade()
  remove("./ota.bin");
  return 0;
 }
+uint32 GAgent_ReadOTAFile( uint16 offset,int8* buf,int32 len )
+{
+    return  GAgent_ReadFile( offset, buf, len );
+}
+uint32 GAgent_DeleteFirmware( int32 offset,int32 filelen )
+{
+    remove("./ota.bin");
+    return 0;
+}
+int32 GAgent_WIFIOTAByUrl( pgcontext pgc,int8 *szdownloadUrl )
+{
+     int32 ret = 0;
+    int32 http_socketid = -1;
+    int8 OTA_IP[32]={0};
+    int8 *url = NULL;
+    int8 *host = NULL;   
+    if(RET_FAILED == Http_GetHost( szdownloadUrl, &host, &url ) )
+    {
+        return RET_FAILED;
+    }
+    ret = GAgent_GetHostByName( host,OTA_IP );
+    if( ret!=0)
+    {
+        GAgent_Printf( GAGENT_INFO,"file:%s function:%s line:%d ",__FILE__,__FUNCTION__,__LINE__ );
+        return RET_FAILED;
+    }
+    
+    http_socketid = Cloud_InitSocket( http_socketid, OTA_IP, 80, 0 );
 
+    
+    ret = Http_ReqGetFirmware( url, host, http_socketid );
+    if( RET_SUCCESS == ret )
+    {
+        ret = Http_ResGetFirmware( pgc, http_socketid );
+        close(http_socketid);
+        return ret;
+    }
+    else
+    {
+        GAgent_Printf(GAGENT_WARNING,"req get Firmware failed!\n");
+        close(http_socketid);
+        return RET_FAILED;
+    }
+}
 
 /*
 void Socket_CreateTCPServer(int tcp_port)

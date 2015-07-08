@@ -20,11 +20,11 @@ int get_yeardays(int year)
 }
 _tm GAgent_GetLocalTimeForm(uint32 time)
 {
-	time += Eastern8th;
 	_tm tm;
 	int x;
 	int i=1970, mons[] = { 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 };
 
+	time += Eastern8th;
 	for(i=1970; time>0;)
 	{
 	    x=get_yeardays(i);
@@ -162,16 +162,8 @@ void Local_HalInit( pgcontext pgc )
     int totalCap = BUF_LEN + BUF_HEADLEN;
     int bufCap = BUF_LEN;
     
-    hal_ReceiveInit( );
-
-    pgc->mcu.Txbuf = (ppacket)malloc( sizeof(packet) );
-    pgc->mcu.Txbuf->allbuf = (uint8 *)malloc( totalCap );
-    pgc->mcu.Txbuf->totalcap = totalCap;
-    pgc->mcu.Txbuf->bufcap = bufCap;
-    resetPacket( pgc->mcu.Txbuf );
-
+    hal_ReceiveInit();
     pgc->mcu.isBusy = 0;
-
 }
 
 /****************************************************************
@@ -193,15 +185,10 @@ uint32 Local_SendData( int32 fd,uint8 *pData, int32 bufferMaxLen )
     }
     return 0;
 }
-int32 GAgent_SendStopUpgrade(pgcontext pgc)
+int32 GAgent_SendStopUpgrade( pgcontext pgc,ppacket pBuf )
 {
-    uint8 gagent_Send_StopBuf[9]=
-    {
-        0xff,0xff,0x00,0x05,0x20,0x01,0x00,0x00,0x07
-    }; 
-    gagent_Send_StopBuf[8]  = GAgent_SetCheckSum( gagent_Send_StopBuf, 8);
-    Local_SendData( pgc->rtinfo.local.uart_fd,gagent_Send_StopBuf, 9 );
-    GAgent_Printf(GAGENT_WARNING,"send stop upgrade signal\n");
+    resetPacket(pBuf);
+    GAgent_LocalDataWriteP0( pgc,pgc->rtinfo.local.uart_fd, pBuf, GAGENT_STOP_SEND );
     return 0;
 }
 
@@ -271,8 +258,8 @@ static int Local_CheckAck(pgcontext pgc, int32 cmd, int32 sn)
     int32 snTx;
     int32 cmdTx;
 
-    cmdTx = pgc->mcu.Txbuf->phead[MCU_CMD_POS];
-    snTx = pgc->mcu.Txbuf->phead[MCU_SN_POS];
+    cmdTx = pgc->mcu.TxbufInfo.cmd;
+    snTx = pgc->mcu.TxbufInfo.sn;
     if((snTx == sn) && ((cmdTx + 1) == cmd))
     {
         /* communicate done */
@@ -323,7 +310,9 @@ int32 GAgent_LocalDataWriteP0( pgcontext pgc,int32 fd,ppacket pTxBuf,uint8 cmd )
 
     sendLen = (pTxBuf->pend) - (pTxBuf->phead);
     sendLen = Local_DataAdapter( (pTxBuf->phead)+2,( (pTxBuf->pend) ) - ( (pTxBuf->phead)+2 ) );
-
+    
+    pgc->mcu.TxbufInfo.cmd = pTxBuf->phead[4];
+    pgc->mcu.TxbufInfo.sn = pTxBuf->phead[5];
     /* step 2. send data */
     Local_SendData( fd, pTxBuf->phead,sendLen );
     pgc->mcu.isBusy = 1;
@@ -442,7 +431,7 @@ void Local_GetInfo( pgcontext pgc )
 
     for( i=0;i<count;i++ )
     {
-        ret = GAgent_LocalDataWriteP0(pgc, pgc->rtinfo.local.uart_fd, pgc->mcu.Txbuf, MCU_INFO_CMD);
+        ret = GAgent_LocalDataWriteP0(pgc, pgc->rtinfo.local.uart_fd, pgc->rtinfo.Rxbuf, MCU_INFO_CMD);
         if(RET_SUCCESS == ret)
         {
             GAgent_Printf( GAGENT_INFO,"GAgent get local info ok.");
@@ -520,28 +509,16 @@ void GAgent_Clean_Config( pgcontext pgc )
 }
 int32 GAgent_LocalSendUpgrade(pgcontext pgc,int32 fd,ppacket pTxBuf,uint16 piecelen,uint8 cmd)
 {
-    FILE *fp;
-    int file_handle,file_size;
     uint16 piecenum = 1;
     uint16 piececount;
+    uint16 remainlen;
     uint32 offset;
     uint32 stopUpgradeFlag = 0;
     int ret;
     resetPacket(pTxBuf);
-    if((file_handle=open("ota.bin",O_RDONLY))==-1)
-    {
-    	GAgent_Printf(GAGENT_WARNING,"Can't open the ota.bin file\n");
-    	return RET_FAILED;
-    }
-    if((fp=fopen("ota.bin","r"))==NULL)
-    {
-	   GAgent_Printf(GAGENT_WARNING,"Can't open the ota.bin file\n");
-	   return RET_FAILED;
-    }
-    fseek(fp,0,SEEK_END);
-    file_size=ftell(fp);
-    piececount = file_size/piecelen;
-    if( file_size%piecelen )
+   
+    piececount = pgc->rtinfo.filelen/piecelen;
+    if( (pgc->rtinfo.filelen) % piecelen )
     {
         piececount += 1;
     }
@@ -552,14 +529,14 @@ int32 GAgent_LocalSendUpgrade(pgcontext pgc,int32 fd,ppacket pTxBuf,uint16 piece
         offset +=2;
         *(uint16 *)(pTxBuf->ppayload+offset) = htons(piececount);
         offset +=2;
-        read(file_handle,pTxBuf->ppayload+offset,piecelen);
-        pTxBuf->pend = (pTxBuf->ppayload)+2+2+piecelen;
-        copyPacket(pTxBuf, pgc->mcu.Txbuf);
-        ret = GAgent_LocalDataWriteP0( pgc,pgc->rtinfo.local.uart_fd, pgc->mcu.Txbuf, cmd );
-        if( RET_FAILED== ret)
+        GAgent_ReadOTAFile( (piecenum-1)*piecelen, (int8 *)pTxBuf->ppayload+offset, piecelen );
+        pTxBuf->pend = pTxBuf->ppayload + 2 + 2 + piecelen;
+        ret = GAgent_LocalDataWriteP0( pgc, pgc->rtinfo.local.uart_fd, pTxBuf, cmd );
+        if( RET_FAILED == ret)
         {
             stopUpgradeFlag = 1;
-            GAgent_SendStopUpgrade( pgc );
+            GAgent_Printf(GAGENT_WARNING,"send stop upgrade signal\n");
+            GAgent_SendStopUpgrade( pgc, pTxBuf );
         }    
         piecenum++;
         if( piecenum == piececount )
@@ -569,29 +546,25 @@ int32 GAgent_LocalSendUpgrade(pgcontext pgc,int32 fd,ppacket pTxBuf,uint16 piece
             offset +=2;
             *(uint16 *)(pTxBuf->ppayload+offset) = htons(piececount);
             offset +=2;
-            fseek(fp,(piecenum-1)*piecelen,SEEK_SET);
-            read(file_handle,pTxBuf->ppayload+offset,file_size-ftell(fp));
-            pTxBuf->pend = (pTxBuf->ppayload)+2+2+file_size-ftell(fp);
-            copyPacket(pTxBuf, pgc->mcu.Txbuf);
-            GAgent_LocalDataWriteP0( pgc,pgc->rtinfo.local.uart_fd, pgc->mcu.Txbuf, cmd );             
+            remainlen = (pgc->rtinfo.filelen) - (piecenum-1)*piecelen;
+            GAgent_ReadOTAFile( (piecenum-1)*piecelen, (int8 *)pTxBuf->ppayload+offset, remainlen );
+            pTxBuf->pend = (pTxBuf->ppayload) + 2 + 2 + remainlen;
+            GAgent_LocalDataWriteP0( pgc,pgc->rtinfo.local.uart_fd, pTxBuf, cmd );             
             if( RET_FAILED== ret)
             {
                 stopUpgradeFlag = 1;
-                GAgent_SendStopUpgrade( pgc );
+                GAgent_SendStopUpgrade( pgc, pTxBuf );
             } 
         }
     }
-
-    fclose(fp);
-    close(file_handle);
     if( 0 == stopUpgradeFlag )
     {
-        GAgent_Printf(GAGENT_CRITICAL,"send upgrade packet success!\n");
+        GAgent_DeleteFirmware( 0, pgc->rtinfo.filelen );
         return RET_SUCCESS;
     }
     else
     {
-        GAgent_Printf(GAGENT_CRITICAL,"send upgrade packet failed!\n");
+        GAgent_DeleteFirmware( 0, pgc->rtinfo.filelen );
         return RET_FAILED;
     }
 }
@@ -612,11 +585,11 @@ void GAgent_LocalSendGAgentstatus(pgcontext pgc,uint32 dTime_s )
           GAgent_Printf( GAGENT_INFO,"GAgentStatus change, lastGAgentStatus=0x%04x, newGAgentStatus=0x%04x", LastGAgentStatus, GAgentStatus);
           pgc->rtinfo.lastGAgentStatus = pgc->rtinfo.GAgentStatus&LOCAL_GAGENTSTATUS_MASK;
           GAgentStatus = htons(GAgentStatus);
-          memcpy((pgc->mcu.Txbuf->ppayload), (uint8 *)&GAgentStatus, 2);
-          pgc->mcu.Txbuf->pend =  (pgc->mcu.Txbuf->ppayload)+2;
+          memcpy((pgc->rtinfo.Rxbuf->ppayload), (uint8 *)&GAgentStatus, 2);
+          pgc->rtinfo.Rxbuf->pend =  (pgc->rtinfo.Rxbuf->ppayload)+2;
           pgc->rtinfo.updatestatusinterval =  0; 
           //GAgent_Printf(GAGENT_CRITICAL,"updateGagentstatusLast time=%d", (pgc->rtinfo.send2LocalLastTime));
-         GAgent_LocalDataWriteP0( pgc,pgc->rtinfo.local.uart_fd, (pgc->mcu.Txbuf), WIFI_STATUS2MCU );
+         GAgent_LocalDataWriteP0( pgc,pgc->rtinfo.local.uart_fd, (pgc->rtinfo.Rxbuf), WIFI_STATUS2MCU );
     }
 
     pgc->rtinfo.updatestatusinterval+= dTime_s;
@@ -626,9 +599,9 @@ void GAgent_LocalSendGAgentstatus(pgcontext pgc,uint32 dTime_s )
         pgc->rtinfo.updatestatusinterval = 0;
         GAgentStatus = pgc->rtinfo.GAgentStatus&LOCAL_GAGENTSTATUS_MASK;
         GAgentStatus = htons(GAgentStatus);
-        memcpy((pgc->mcu.Txbuf->ppayload), (uint8 *)&GAgentStatus, 2);
-        pgc->mcu.Txbuf->pend =  (pgc->mcu.Txbuf->ppayload)+2;
-        GAgent_LocalDataWriteP0( pgc,pgc->rtinfo.local.uart_fd, (pgc->mcu.Txbuf), WIFI_STATUS2MCU );
+        memcpy((pgc->rtinfo.Rxbuf->ppayload), (uint8 *)&GAgentStatus, 2);
+        pgc->rtinfo.Rxbuf->pend =  (pgc->rtinfo.Rxbuf->ppayload)+2;
+        GAgent_LocalDataWriteP0( pgc,pgc->rtinfo.local.uart_fd, (pgc->rtinfo.Rxbuf), WIFI_STATUS2MCU );
     }
 }
 void GAgent_LocalInit( pgcontext pgc )
@@ -639,6 +612,7 @@ void GAgent_LocalInit( pgcontext pgc )
     GAgent_RegisterSendDataHook( serial_write );
     Local_GetInfo( pgc );
     //GAgent_SOC_GetInfo( pgc );
+    GAgent_Printf( GAGENT_INFO,"GAgent_LocalInit OK!");
 }
 void GAgent_LocalTick( pgcontext pgc,uint32 dTime_s )
 {
@@ -655,7 +629,7 @@ void GAgent_LocalTick( pgcontext pgc,uint32 dTime_s )
             pgc->rtinfo.local.oneShotTimeout = 0;
             pgc->rtinfo.local.timeoutCnt++;
             GAgent_Printf(GAGENT_CRITICAL,"Local ping...");
-            GAgent_LocalDataWriteP0( pgc,pgc->rtinfo.local.uart_fd, pgc->mcu.Txbuf,WIFI_PING2MCU );
+            GAgent_LocalDataWriteP0( pgc,pgc->rtinfo.local.uart_fd, pgc->rtinfo.Rxbuf,WIFI_PING2MCU );
         }
     }
 }
@@ -680,6 +654,7 @@ void GAgent_Local_ErrHandle(pgcontext pgc, ppacket pRxbuf)
         case WIFI_STATUS2MCU_ACK:
         case MCU_NEED_UPGRADE_ACK:
         case GAGENT_SEND_UPGRADE_ACK:
+        case GAGENT_STOP_SEND_ACK:
         case MCU_REPLY_GAGENT_DATA_ILLEGAL:
             /* do nothing, return immediately */
             break;
@@ -711,6 +686,9 @@ uint32 GAgent_LocalDataHandle( pgcontext pgc,ppacket Rxbuf,int32 RxLen /*,ppacke
     uint8 configType=0;
     _tm tm;
     int32 piecelen;
+    int8 MD5[33] = {0};
+    int8 MD5len;
+    int i;
     if( RxLen>0 )
     {
         localRxbuf = Rxbuf->phead;
@@ -777,6 +755,7 @@ uint32 GAgent_LocalDataHandle( pgcontext pgc,ppacket Rxbuf,int32 RxLen /*,ppacke
                     }
                     ret = 1;
                 }
+                break;
             case WIFI_STATUS2MCU_ACK:
                 /*  */
             case WIFI_PING2MCU_ACK:
@@ -806,23 +785,41 @@ uint32 GAgent_LocalDataHandle( pgcontext pgc,ppacket Rxbuf,int32 RxLen /*,ppacke
                 Local_Ack2MCUwithP0( Rxbuf, pgc->rtinfo.local.uart_fd, sn, MCU_REQ_GSERVER_TIME_ACK );
                 ret = 0;
                 break;
-            case MCU_READY_RECV_FIRMWARE:
-                Local_Ack2MCU( pgc->rtinfo.local.uart_fd, sn, MCU_READY_RECV_FIRMWARE_ACK );
-                GAgent_Printf(GAGENT_CRITICAL,"start send firmware to MCU!\n");
-                piecelen = (localRxbuf[8]<<8) + localRxbuf[8+1];
-                if( RET_SUCCESS == GAgent_LocalSendUpgrade(pgc,pgc->rtinfo.local.uart_fd, Rxbuf, piecelen, GAGENT_SEND_UPGRADE) )
-                {
-                    GAgent_Printf(GAGENT_CRITICAL,"send firmware to MCU success!\n");
-                    
-                } 
-                remove("./ota.bin");
-                ret = 0;
-                break;
             case MCU_NEED_UPGRADE_ACK:
                 Local_CheckAck(pgc, cmd, sn);
                 ret = 0 ;
                 break;
+            case MCU_READY_RECV_FIRMWARE:
+                Local_Ack2MCU( pgc->rtinfo.local.uart_fd, sn, MCU_READY_RECV_FIRMWARE_ACK );
+                MD5len = (localRxbuf[8]<<8) + localRxbuf[8+1];
+                for( i=0; i<MD5len; i++ )
+                    MD5[i] = localRxbuf[8+2+i];
+                if( strcmp(pgc->rtinfo.MD5, MD5) )
+                {
+                    GAgent_Printf(GAGENT_WARNING,"MD5 match failed!\n");
+                    free(pgc->rtinfo.MD5);
+                }
+                else
+                {
+                    free(pgc->rtinfo.MD5);
+                    GAgent_Printf(GAGENT_CRITICAL,"start send firmware to MCU!\n");
+                    piecelen = (localRxbuf[8+2+MD5len]<<8) + localRxbuf[8+2+MD5len+1];
+                    if( RET_SUCCESS == GAgent_LocalSendUpgrade(pgc,pgc->rtinfo.local.uart_fd, Rxbuf, piecelen, GAGENT_SEND_UPGRADE) )
+                    {
+                        GAgent_Printf(GAGENT_CRITICAL,"send firmware to MCU success!\n");
+                    }
+                    else
+                    {
+                        GAgent_Printf(GAGENT_CRITICAL,"send firmware to MCU failed!\n");
+                    }
+                }
+                ret = 0;
+                break;
             case GAGENT_SEND_UPGRADE_ACK:
+                Local_CheckAck(pgc, cmd, sn);
+                ret = 0 ;
+                break;
+            case GAGENT_STOP_SEND_ACK:
                 Local_CheckAck(pgc, cmd, sn);
                 ret = 0 ;
                 break;

@@ -6,7 +6,6 @@
 void make_rand(int8* data );
 varc Tran2varc(uint32 remainLen);
 void resetPacket( ppacket pbuf );
-void copyPacket( ppacket src,ppacket dest );
 uint32 ParsePacket( ppacket pbuf );
 int8 dealPacket( pgcontext pgc, ppacket pTxBuf );
 int32 BuildPacket( ppacket pbuf,int32 type );

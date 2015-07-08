@@ -1,5 +1,6 @@
 #include "gagent.h"
 #include "lan.h"
+#include "cloud.h"
 
 pgcontext pgContextData=NULL;
 void GAgent_NewVar( pgcontext *pgc );
@@ -15,7 +16,7 @@ void GAgent_Init( pgcontext *pgc )
 {
     GAgent_DevInit( *pgc );
     GAgent_NewVar( pgc );
-    GAgent_logevelSet( /*GAGENT_DUMP*/ GAGENT_WARNING );
+    GAgent_loglevelSet( /*GAGENT_DUMP*/GAGENT_WARNING );
 
     GAgent_VarInit( pgc );
     GAgent_LocalInit( *pgc );
@@ -116,7 +117,6 @@ void GAgent_VarInit( pgcontext *pgc )
             memset( (*pgc)->gc.cloud3info.cloud3Name,0,CLOUD3NAME );    
     }
     
-
     (*pgc)->rtinfo.waninfo.ReConnectMqttTime = GAGENT_MQTT_TIMEOUT;
     (*pgc)->rtinfo.waninfo.ReConnectHttpTime = GAGENT_HTTP_TIMEOUT;
     (*pgc)->rtinfo.waninfo.send2HttpLastTime = GAgent_GetDevTime_S();
@@ -348,7 +348,7 @@ int8 GAgent_IsNeedDisableDID( pgcontext pgc )
     }
     return 1;
 }
-void GAgent_logevelSet( uint16 level )
+void GAgent_loglevelSet( uint16 level )
 {
     pgContextData->rtinfo.loglevel = level;
 }
@@ -495,22 +495,18 @@ void GAgent_UpdateInfo( pgcontext pgc,uint8 *new_pk )
  ********************************************************/
 void GAgent_Config( uint8 typed,pgcontext pgc )
 {
-    uint16 tempWiFiStatus=0;
     switch( typed )
     {
         //AP MODE
         case 1:
-             tempWiFiStatus = pgc->rtinfo.GAgentStatus;
-             tempWiFiStatus |= WIFI_MODE_ONBOARDING;
              GAgent_Printf( GAGENT_DEBUG,"file:%s function:%s line:%d ",__FILE__,__FUNCTION__,__LINE__ );
-             tempWiFiStatus = GAgent_DevCheckWifiStatus( tempWiFiStatus );
-            //GAgent_DRV_WiFi_SoftAPModeStart( AP_NAME, AP_PASSWORD, WIFI_MODE_AP );
+             GAgent_DevCheckWifiStatus( WIFI_MODE_ONBOARDING,1 );
         break;
         //Airlink
         case 2:
         {
             int8 timeout;
-            uint16 tempWiFiStatus;
+            uint16 tempWiFiStatus=0;
             timeout = 60;
 
             tempWiFiStatus = pgc->rtinfo.GAgentStatus;
@@ -535,7 +531,12 @@ void GAgent_Config( uint8 typed,pgcontext pgc )
                 }
                 GAgent_DevLED_Red( (timeout%2) );
             }
-            GAgent_Printf( GAGENT_INFO,"AirLink Timeout ...");
+            if( timeout<=0 )
+            {
+                    GAgent_DevCheckWifiStatus( WIFI_MODE_ONBOARDING,1 );
+                    GAgent_Printf( GAGENT_INFO,"AirLink Timeout ...");
+                    GAgent_Printf( GAGENT_INFO,"Into SoftAp Config...");
+            }
         break;
         }
         default :
@@ -560,6 +561,21 @@ uint8 GAgent_ExitTest( pgcontext pgc )
     GAgent_SetWiFiStatus( pgc,WIFI_MODE_TEST,0 );
     GAgent_DRVWiFiStopScan( );
     return 0;
+}
+/****************************************************************
+return      :       RET_SUCCESS  success
+            :       RET_FAILED   fail
+****************************************************************/
+int32 GAgent_Cloud_OTAByUrl( pgcontext pgc,int8 *downloadUrl,OTATYPE otatype )
+{
+    if( OTATYPE_WIFI == otatype )
+    {
+         return GAgent_WIFIOTAByUrl( pgc, downloadUrl );
+    }
+    else
+    {
+         return GAgent_MCUOTAByUrl( pgc, downloadUrl );
+    }   
 }
 /****************************************************************
 FunctionName        :   GAgent_GetStaWiFiLevel

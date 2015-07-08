@@ -12,6 +12,7 @@
 #define MQTT_STATUS_RES_LOGINTOPIC3     9
 #define MQTT_STATUS_RUNNING             10
 
+int32 GAgent_MCUOTAByUrl( pgcontext pgc,int8 *szdownloadUrl );
 uint32 GAgent_ReqServerTime(pgcontext pgc);
 uint32 GAgent_Get_Gserver_Time(uint32 *clock,uint8 *Http_recevieBuf,int32 respondCode);
 int32 Cloud_InitSocket( int32 iSocketId,int8 *p_szServerIPAddr,int32 port,int8 flag );
@@ -38,4 +39,5 @@ uint32 Cloud_isNeedOTA( pgcontext pgc, int type, int8 *sFV );
 void Log2Cloud(pgcontext pgc);
 void Cloud_ClearClientAttrs(pgcontext pgc, stCloudAttrs_t *client);
 void Cloud_SetClientAttrs(pgcontext pgc, uint8 *clientid, uint16 cmd, int32 sn);
+
 #endif

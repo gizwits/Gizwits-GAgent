@@ -4,15 +4,53 @@
 #include "cloud.h"
 #include "3rdcloud.h"
 #include "utils.h"
+#include "netevent.h"
+
 /*
 return 0 OTA SUCCESS
 */
+int32 GAgent_MCUOTAByUrl( pgcontext pgc,int8 *downloadUrl )
+{
+    
+    int32 ret = 0;
+    int32 http_socketid = -1;
+    int8 OTA_IP[32]={0};
+    int8 *url = NULL;
+    int8 *host = NULL;   
+    if(RET_FAILED == Http_GetHost( downloadUrl, &host, &url ) )
+    {
+        return RET_FAILED;
+    }
+    ret = GAgent_GetHostByName( host,OTA_IP );
+    if( ret!=0 )
+    {
+        GAgent_Printf( GAGENT_INFO,"file:%s function:%s line:%d ",__FILE__,__FUNCTION__,__LINE__ );
+        return RET_FAILED;
+    }
+    http_socketid = Cloud_InitSocket( http_socketid,OTA_IP, 80, 0 );
+    if( http_socketid<=0 )
+        return RET_FAILED;
+    ret = Http_ReqGetFirmware( url,host,http_socketid );
+    if( RET_SUCCESS == ret )
+    {
+        ret = Http_ResGetFirmware( pgc, http_socketid );
+        close(http_socketid);
+        return ret;
+    }
+    else
+    {
+        GAgent_Printf(GAGENT_WARNING,"req get Firmware failed!\n");
+        close(http_socketid);
+        return RET_FAILED;
+    }
+}
+
 uint32 GAgent_ReqServerTime(pgcontext pgc)
 {
     uint32 ret; 
     uint8 *pCloudConfiRxbuf;
     pCloudConfiRxbuf = pgc->rtinfo.Rxbuf->phead;
-	
+
     if((pgc->rtinfo.GAgentStatus&WIFI_STATION_CONNECTED) !=  WIFI_STATION_CONNECTED)
     {
         return RET_FAILED;
@@ -51,21 +89,6 @@ uint32 GAgent_Get_Gserver_Time( uint32 *clock, uint8 *Http_recevieBuf, int32 res
     time = atoi(stime);
     *clock = time;
     return RET_SUCCESS;
-}
-uint32 GAgent_Cloud_OTAByUrl( pgcontext pgc,int32 socketid,int8 *downloadUrl,int8 *sMD5,int32 *filelen )
-{
-    int ret = 0;
-    ret = Http_ReqGetFirmware( downloadUrl, socketid );
-    if( RET_SUCCESS == ret)
-    {
-        return GAgent_OTAByUrl( pgc, socketid, sMD5, filelen );
-    }
-    else
-    {
-        GAgent_Printf(GAGENT_WARNING,"req get Firmware failed!\n");
-        return RET_FAILED;
-    }
-    
 }
 /****************************************************************
         FunctionName    :   GAgent_Cloud_SendData
@@ -604,10 +627,10 @@ void GAgent_CloudTick( pgcontext pgc,uint32 dTime_s )
             pgc->rtinfo.waninfo.wanclient_num = 0;
             pgc->rtinfo.waninfo.ReConnectMqttTime = 0;
  
-            newStatus &=~ WIFI_CLOUD_CONNECTED;
+            //newStatus &=~ WIFI_CLOUD_CONNECTED;
             GAgent_SetCloudServerStatus( pgc,MQTT_STATUS_START );
             GAgent_Printf( GAGENT_INFO,"file:%s function:%s line:%d ",__FILE__,__FUNCTION__,__LINE__ );
-            newStatus = GAgent_DevCheckWifiStatus( newStatus );
+            newStatus = GAgent_DevCheckWifiStatus( WIFI_CLOUD_CONNECTED,0 );
         }
         else
         {
@@ -637,14 +660,13 @@ uint32 Cloud_ConfigDataHandle( pgcontext pgc /*int32 cloudstatus*/ )
     int8 *pDeviceID=NULL;
     int8 timeoutflag = 0;
     static OTATYPE OTATypeflag = OTATYPE_WIFI;
+    fd_set readfd;
+    int32 http_fd;
 
     uint8 *pCloudConfiRxbuf = NULL;
     resetPacket(pgc->rtinfo.Rxbuf);
     pCloudConfiRxbuf = pgc->rtinfo.Rxbuf->phead;
      
-    fd_set readfd;
-    int32 http_fd;
-
     pConfigData = &(pgc->gc);
     pGlobalVar = pgc;
     cloudstatus = pgc->rtinfo.waninfo.CloudStatus;
@@ -657,7 +679,7 @@ uint32 Cloud_ConfigDataHandle( pgcontext pgc /*int32 cloudstatus*/ )
     
     if(strlen(pgc->gc.GServer_ip) > IP_LEN_MAX || strlen(pgc->gc.GServer_ip) < IP_LEN_MIN)
     {
-        GAgent_Printf(GAGENT_WARNING,"GServer IP is illegal!!");
+        //GAgent_Printf(GAGENT_WARNING,"GServer IP is illegal!!");
         return 1;
     }
     
@@ -802,10 +824,7 @@ uint32 Cloud_ConfigDataHandle( pgcontext pgc /*int32 cloudstatus*/ )
             {
                 int8 *download_url = NULL;
                 int8  disableDIDflag=0;
-                int32 filelen = 0;
-                uint16 MD5len = 0;
-                char MD5[32+1]={0};
-                int i;
+                int32 i;
                 download_url = (int8 *)malloc(256);
                 if(NULL == download_url)
                 {
@@ -826,11 +845,12 @@ uint32 Cloud_ConfigDataHandle( pgcontext pgc /*int32 cloudstatus*/ )
                     {
                         if( OTATYPE_MCU == OTATypeflag )
                         {
-                            GAgent_Printf( GAGENT_WARNING,"GAgent get OTA respondCode:%d,go to check disaable Device!",respondCode );
+                            GAgent_Printf( GAGENT_WARNING,"GAgent get MCU OTA respondCode:%d,go to check disaable Device!",respondCode );
                             disableDIDflag = 1;
                         }
                         else
                         {
+                            GAgent_Printf( GAGENT_WARNING,"GAgent get GAgent OTA respondCode:%d,go to check MCU OTA!",respondCode );
                             OTATypeflag = OTATYPE_MCU;
                             Cloud_ReqGetSoftver( pgc, OTATypeflag );
                             GAgent_SetCloudConfigStatus( pgc,CLOUD_RES_GET_SOFTVER );
@@ -843,7 +863,7 @@ uint32 Cloud_ConfigDataHandle( pgcontext pgc /*int32 cloudstatus*/ )
                     pgc->rtinfo.waninfo.httpCloudPingTime = 0;
                     pgc->rtinfo.waninfo.firstConnectHttpTime = GAgent_GetDevTime_S();
                     ret = Cloud_isNeedOTA( pgc, OTATypeflag, pGlobalVar->gc.FirmwareVer );
-                    if( ret != RET_SUCCESS  )
+                    if( ret != RET_SUCCESS )
                     {
                         if( OTATYPE_MCU == OTATypeflag )
                         {
@@ -861,32 +881,25 @@ uint32 Cloud_ConfigDataHandle( pgcontext pgc /*int32 cloudstatus*/ )
                     else
                     {
                         GAgent_Printf( GAGENT_CRITICAL,"Start OTA...\n");
-                        if( RET_SUCCESS == GAgent_Cloud_OTAByUrl( pgc, http_fd, download_url, MD5, &filelen) )
+                        if( RET_SUCCESS == GAgent_Cloud_OTAByUrl( pgc, download_url, OTATypeflag ) )
                         {
                             if( OTATYPE_MCU == OTATypeflag )
                             {
                                 GAgent_Printf( GAGENT_CRITICAL,"GAgent Download MCU Firmware success!\n");
                                 //inform MCU
-                                /* payload(xB): filelen(4B) | MD5len | MD5 | MCU_SOFTVER_LEN */
-                                MD5len = strlen(MD5);
                                 resetPacket(pgc->rtinfo.Rxbuf);
-                                *(uint32 *)(pgc->rtinfo.Rxbuf->ppayload) = htonl(filelen);
-                                *(uint16 *)(pgc->rtinfo.Rxbuf->ppayload+4) = htons(MD5len);
-                                for(i=0; i<MD5len; i++)
-                                    pgc->rtinfo.Rxbuf->ppayload[4+2+i] = MD5[i];
-                                pgc->rtinfo.Rxbuf->ppayload[4+2+MD5len] = MCU_SOFTVER_LEN;
-                                for(i=0; i<MCU_SOFTVER_LEN; i++)
-                                    pgc->rtinfo.Rxbuf->ppayload[4+2+MD5len+1+i] = pgc->mcu.soft_ver[i];
-                                pgc->rtinfo.Rxbuf->pend = (pgc->rtinfo.Rxbuf->ppayload) + 4 + 2 + MD5len + 1 + MCU_SOFTVER_LEN;
-                                copyPacket(pgc->rtinfo.Rxbuf, pgc->mcu.Txbuf);
-                                GAgent_LocalDataWriteP0( pgc,pgc->rtinfo.local.uart_fd, pgc->mcu.Txbuf, 0x19 );
-                                GAgent_SetCloudConfigStatus ( pgc,CLOUD_CONFIG_OK );
+                                *(uint32 *)(pgc->rtinfo.Rxbuf->ppayload) = htonl(pgc->rtinfo.filelen);
+                                *(uint16 *)(pgc->rtinfo.Rxbuf->ppayload+4) = htons(32);
+                                for(i=0; i<32; i++)
+                                    pgc->rtinfo.Rxbuf->ppayload[4+2+i] = pgc->rtinfo.MD5[i];
+                                pgc->rtinfo.Rxbuf->pend = (pgc->rtinfo.Rxbuf->ppayload) + 4 + 2 + 32;
+                                GAgent_LocalDataWriteP0( pgc,pgc->rtinfo.local.uart_fd, pgc->rtinfo.Rxbuf, MCU_NEED_UPGRADE );
+                                disableDIDflag=1;
+                                //GAgent_SetCloudConfigStatus ( pgc,CLOUD_CONFIG_OK );
                             }
                             else
                             {
                                 GAgent_Printf( GAGENT_CRITICAL,"GAgent download WIFI firmware success!\n");
-                                GAgent_StartUpgrade();
-                               
                                 OTATypeflag = OTATYPE_MCU;
                                 Cloud_ReqGetSoftver( pgc, OTATypeflag );
                                 GAgent_SetCloudConfigStatus( pgc,CLOUD_RES_GET_SOFTVER );
@@ -921,6 +934,7 @@ uint32 Cloud_ConfigDataHandle( pgcontext pgc /*int32 cloudstatus*/ )
                     {
                         GAgent_SetCloudConfigStatus ( pgc,CLOUD_CONFIG_OK );
                     }
+                    OTATypeflag = OTATYPE_WIFI;
                 }
                 free(download_url);
                 break;
@@ -1099,9 +1113,9 @@ int32 Cloud_M2MDataHandle(  pgcontext pgc,ppacket pbuf /*, ppacket poutBuf*/, ui
           {
               mqtt_fd=-1;
               pGlobalVar->rtinfo.waninfo.m2m_socketid=-1;
-              GAgent_SetCloudServerStatus( pgc,MQTT_STATUS_START );
-              GAgent_SetWiFiStatus( pgc,WIFI_CLOUD_CONNECTED,0 );
-              GAgent_DevCheckWifiStatus( pgc->rtinfo.GAgentStatus );
+              //GAgent_SetCloudServerStatus( pgc,MQTT_STATUS_START );
+              //GAgent_SetWiFiStatus( pgc,WIFI_CLOUD_CONNECTED,0 );
+              GAgent_DevCheckWifiStatus( WIFI_CLOUD_CONNECTED,0 );
               GAgent_Printf(GAGENT_DEBUG,"MQTT fd was closed!!");
               GAgent_Printf(GAGENT_DEBUG,"GAgent go to MQTT_STATUS_START");
               return -1;
@@ -1201,9 +1215,9 @@ int32 Cloud_M2MDataHandle(  pgcontext pgc,ppacket pbuf /*, ppacket poutBuf*/, ui
                         GAgent_Printf(GAGENT_CRITICAL,"GAgent Cloud Working...");
                         GAgent_SetCloudServerStatus( pgc,MQTT_STATUS_RUNNING );
                         newStatus = pgc->rtinfo.GAgentStatus;
-                        newStatus |=WIFI_CLOUD_CONNECTED;
+                        //newStatus |=WIFI_CLOUD_CONNECTED;
                         GAgent_Printf( GAGENT_INFO,"file:%s function:%s line:%d ",__FILE__,__FUNCTION__,__LINE__ );
-                        newStatus = GAgent_DevCheckWifiStatus( newStatus );
+                        newStatus = GAgent_DevCheckWifiStatus( WIFI_CLOUD_CONNECTED,1 );
                         //GAgent_SetWiFiStatus( pgc,WIFI_CLOUD_CONNECTED,1 );
                      }
                       break;

@@ -6,7 +6,34 @@ uint8 *hal_RxBuffer=NULL;
  pos_start:pos of get
  pos_current:pos of put
  */
-uint32 pos_start = 0, pos_current = 0;
+static uint32 pos_start = 0;
+static uint32 pos_current = 0;
+
+/*
+ * 串口通讯协议
+ * | head(0xffff) | len(2B) | cmd(2B) | SN(1B) | flag(2B) | payload(xB) | checksum(1B) |
+ *     0xffff     cmd~checksum                                            len~payload
+ *     0xff-->LOCAL_HAL_REC_SYNCHEAD1
+ *         ff->LOCAL_HAL_REC_SYNCHEAD2
+ *                  len_1-->LOCAL_HAL_REC_DATALEN1
+ *                  len_2-->LOCAL_HAL_REC_DATALEN2
+ *                          | ------------     LOCAL_HAL_REC_DATA     -----------------|
+ *                | ------- halRecKeyWord set to 1 while rec first byte 0xff ----------|
+ */
+/****************LOCAL MACRO AND VAR**********************************/
+// for gu8LocalHalStatus
+    #define         LOCAL_HAL_REC_SYNCHEAD1     1
+    #define         LOCAL_HAL_REC_SYNCHEAD2     2
+    #define         LOCAL_HAL_REC_DATALEN1      3
+    #define         LOCAL_HAL_REC_DATALEN2      4
+    #define         LOCAL_HAL_REC_DATA          5
+static uint8 gu8LocalHalStatus = LOCAL_HAL_REC_SYNCHEAD1;
+/* 见上协议，len字段 */
+static uint16 gu16LocalPacketDataLen;
+/* 一包数据的气味位置偏移 */
+static uint32 guiLocalPacketStart;
+/* 非包头部分，数据0xff应该变换为0xff 55,不影响校验和和len。因此，非包头部分，收到0xff后，该标志位被置1 */
+static uint8 halRecKeyWord = 0;
 
 static uint8 __halbuf_read(uint32 offset)
 {
@@ -83,237 +110,6 @@ void move_data_backward( uint8 *buf, int32 pos_start, int32 pos_end, int32 move_
 }
 
 /****************************************************************
-FunctionName    :   find_packet_backward
-Description     :   在串口缓冲区中，从指定位置往回查找包含该数据的一帧数据，
-                    并返回帧头所在偏移。没有完整一帧数据则返回已接收数据的起始位置。
-pos             :   指定位置. 
-return          :   帧头所在偏移
-Add by will     --2015-05-21
-****************************************************************/
-static int32 find_packet_backward(uint32 pos)
-{
-    uint32 offset;
-    uint8 data1;
-    uint8 data2;
-    uint32 datalen;
-    uint16 packetlen;
-
-    // 缓冲区中已知数据长度
-    datalen = get_data_len(pos_start, pos);
-    if(datalen < MCU_SYNC_HEAD_LEN)
-    {
-        return pos_start;
-    }
-
-    if(datalen <= MCU_SYNC_HEAD_LEN + sizeof(packetlen))
-    {
-        return pos_start;
-    }
-    
-    offset = pos - MCU_SYNC_HEAD_LEN;
-    while(offset != pos_start)
-    {
-        data1 = __halbuf_read(offset);
-        data2 = __halbuf_read(offset + 1);
-
-        if(MCU_HDR_FF == data1 && MCU_HDR_FF == data2)
-        {
-            datalen = get_data_len(offset, pos + 1);
-            packetlen = __halbuf_read(offset + MCU_LEN_POS);
-            packetlen = (packetlen << 8) | __halbuf_read(offset + MCU_LEN_POS + 1);
-            packetlen += MCU_SYNC_HEAD_LEN + sizeof(packetlen);
-            if(datalen <= packetlen)
-            {
-                return offset;
-            }
-            else
-            {
-                return offset + packetlen;
-            }
-            break;
-        }
-        offset--;
-    }
-
-    return pos_start;
-}
-
-/****************************************************************
-FunctionName    :   find_packet_forward
-Description     :   在串口缓冲区中，从指定位置往前查找最近一帧完整数据，
-                    返回该帧数据头所在位置。
-pos             :   指定位置. 
-packetLen       :   输出参数，该帧数据的长度
-return          :   失败--RET_FAILED
-                    成功--帧头所在偏移
-Add by will     --2015-05-21
-****************************************************************/
-static int32 find_packet_forward(uint32 pos, uint16 *packetLen)
-{
-    uint8 data1;
-    uint8 data2;
-    uint32 datalen;
-    uint16 packetlen;
-    uint16 packetLenMin;
-    uint32 start, end;
-
-    start = pos;
-    end = pos_current;
-    datalen = get_data_len(start, end);
-
-    /* A packet len must larger than the member sync head + len */
-    packetLenMin = MCU_SYNC_HEAD_LEN + sizeof(packetlen);
-    
-    while( datalen > packetLenMin )
-    {
-        data1 = __halbuf_read(start);
-        data2 = __halbuf_read(start + 1);
-
-        if(MCU_HDR_FF == data1 && MCU_HDR_FF == data2)
-        {
-            packetlen = __halbuf_read(start + MCU_LEN_POS);
-            packetlen = (packetlen << 8) | __halbuf_read(start + MCU_LEN_POS + 1);
-            packetlen += 4;
-            if(datalen < packetlen)
-            {
-                return RET_FAILED;
-            }
-            else
-            {
-                *packetLen = packetlen;
-                return start;
-            }
-        }
-        start++;
-        datalen--;
-    }
-
-    return RET_FAILED;
-}
-
-int32 check_isInPacket(uint32 pos)
-{
-    uint32 packetStart;
-    uint8 data1, data2;
-    uint32 datalen;
-    uint32 packetLen;
-
-    packetStart = find_packet_backward(pos);
-    
-    data1 = __halbuf_read(packetStart);
-    data2 = __halbuf_read(packetStart + 1);
-
-    if(MCU_HDR_FF == data1 && MCU_HDR_FF == data2)
-    {
-        datalen = get_data_len(packetStart, pos) + 1;
-        
-        if(datalen <= MCU_SYNC_HEAD_LEN + sizeof(uint16))
-        {
-            return 0;
-        }
-        
-        packetLen = __halbuf_read(packetStart + MCU_LEN_POS);
-        packetLen = (packetLen << 8) | __halbuf_read(packetStart + MCU_LEN_POS + 1);
-        packetLen += MCU_SYNC_HEAD_LEN + sizeof(uint16);
-
-        if(datalen > packetLen)
-        {
-            return 0;
-        }
-        else
-        {
-            return 1;
-        }
-    }
-    else
-    {
-        return 0;
-    }
-}
-
-/****************************************************************
-FunctionName    :   Local_decode_data
-Description     :   decode local data in local cycle buf.transfer 0xff55 to 0xff.
-start           :   the posation in local cycle buf where will be decode  
-length          :   decode data length
-
-will change the global pointer "put"--pos_current
-****************************************************************/
-void hal_decode_data(uint32 start, uint32 length)
-{
-    static uint8 isSyncHead = 0;
-    uint8 data;
-    uint32 i;
-    uint32 offRec;
-    uint32 invalidLen;
-    int32 ret;
-    
-    if(0 == length)
-    {
-        return ;
-    }
-
-    offRec = start;
-    for(i = 0; i < length; i++)
-    {
-        data = __halbuf_read(offRec);
-        if(isSyncHead)
-        {
-            isSyncHead = 0;
-            /* check if is a new packet */
-            if(0xFF == data)
-            {
-                /* check if pre byte is in one packet */
-                ret = check_isInPacket(offRec - 1);
-                if(0 == ret)
-                {   /* new packet */
-                    offRec++;
-                    continue;
-                }
-                else
-                {
-                    ret = find_packet_backward(offRec);
-                    invalidLen = get_data_len(ret, offRec + 1);
-                    move_data_backward(hal_RxBuffer, offRec + 1, pos_current, invalidLen);
-                    offRec -= invalidLen;
-                    pos_current = pos_current - invalidLen;
-                }
-            }
-            /* check if is 0xff 0x55 */
-            else if(0x55 == data)
-            {
-                if((offRec & HAL_BUF_MASK) == ((pos_current - 1) & HAL_BUF_MASK))
-                {
-                    /* the last byte has received */
-                    __halbuf_write(offRec, 0x00);
-                }
-                else
-                {
-                    move_data_backward(hal_RxBuffer, offRec + 1, pos_current, 1);
-                }
-                offRec -= 1;
-                pos_current -= 1;
-            }
-            /* invalid packet */
-            else
-            {
-                /* 找到当前字节处于哪一个packet */
-                ret = find_packet_backward(offRec);
-                invalidLen = get_data_len(ret, offRec + 1);
-                move_data_backward(hal_RxBuffer, offRec + 1, pos_current, invalidLen);
-                offRec -= invalidLen;
-                pos_current = pos_current - invalidLen;
-            }
-        }
-        else if(MCU_HDR_FF == data)
-        {
-            isSyncHead = 1;
-        }
-        offRec++;
-    }
-}
-
-/****************************************************************
 FunctionName    :   GAgent_Local_ExtractOnePacket
 Description     :   extract one packet from local cycle buf, and 
                     put data into buf.Will change pos_start
@@ -323,29 +119,122 @@ return          :   >0 the local packet data length.
 ****************************************************************/
 int32 GAgent_Local_ExtractOnePacket(uint8 *buf)
 {
-    int32 ret;
-    uint32 i;
-    uint16 packetLen;
+    uint8 data;
+    uint32 i = 0;
 
-    if(NULL == buf)
+    while((pos_start & HAL_BUF_MASK) != (pos_current & HAL_BUF_MASK))
     {
-        GAgent_Printf(GAGENT_WARNING,"%s,%d,Input buf is NULL", __FUNCTION__, __LINE__);
-        return RET_FAILED;
-    }
+        data = __halbuf_read(pos_start);
 
-    /* find one packet data form position pos_start of local driver buf */
-    ret = find_packet_forward(pos_start, &packetLen);
-    if(ret >= 0)
-    {
-        /* a whole packet */
-        pos_start = ret;
-        for(i = 0; i < packetLen; i++)
+        if(LOCAL_HAL_REC_SYNCHEAD1 == gu8LocalHalStatus)
         {
-            buf[i] = __halbuf_read(pos_start + i);
+            if(MCU_HDR_FF == data)
+            {
+                gu8LocalHalStatus = LOCAL_HAL_REC_SYNCHEAD2;
+
+                guiLocalPacketStart = pos_start;
+            }
         }
-        pos_start += packetLen;
+        else if(LOCAL_HAL_REC_SYNCHEAD2 == gu8LocalHalStatus)
+        {
+            if(MCU_HDR_FF == data)
+            {
+                gu8LocalHalStatus = LOCAL_HAL_REC_DATALEN1;
+            }
+            else
+            {
+                gu8LocalHalStatus = LOCAL_HAL_REC_SYNCHEAD1;
+            }
+        }
+        else
+        {
+            if(halRecKeyWord)
+            {
+                /* 前面接收到0xff */
+                halRecKeyWord = 0;
+                if(0x55 == data)
+                {
+                    data = 0xff;
+                    move_data_backward(hal_RxBuffer, pos_start + 1, pos_current, 1);
+                    pos_current--;
+                    pos_start--;
+
+                }
+                else if(MCU_HDR_FF == data)
+                {
+                    /* 新的一包数据，前面数据丢弃 */
+                    gu8LocalHalStatus = LOCAL_HAL_REC_DATALEN1;
+                    guiLocalPacketStart = pos_start - 1;
+                    pos_start++;
+                    continue;
+                }
+                else
+                {
+                    if(LOCAL_HAL_REC_DATALEN1 == gu8LocalHalStatus)
+                    {
+                        /* 说明前面接收到的0xff和包头0xffff是连在一起的，以最近的0xffff作为包头起始，
+                         * 当前字节作为len字节进行解析
+                         */
+                        guiLocalPacketStart = pos_start - 2;
+                    }
+                    else
+                    {
+                        gu8LocalHalStatus = LOCAL_HAL_REC_SYNCHEAD1;
+                        pos_start++;
+                        continue;
+                    }
+                }
+
+            }
+            else
+            {
+                if(MCU_HDR_FF == data)
+                {
+                    halRecKeyWord = 1;
+                    pos_start++;
+                    continue;
+                }
+            }
+
+            if(LOCAL_HAL_REC_DATALEN1 == gu8LocalHalStatus)
+            {
+                gu16LocalPacketDataLen = data;
+                gu16LocalPacketDataLen = (gu16LocalPacketDataLen << 8) & 0xff00;
+                gu8LocalHalStatus = LOCAL_HAL_REC_DATALEN2;
+            }
+            else if(LOCAL_HAL_REC_DATALEN2 == gu8LocalHalStatus)
+            {
+                gu16LocalPacketDataLen += data;
+                gu8LocalHalStatus = LOCAL_HAL_REC_DATA;
+
+                if(0 == gu16LocalPacketDataLen)
+                {
+                    /* invalid packet */
+                    gu8LocalHalStatus = LOCAL_HAL_REC_SYNCHEAD1;
+                }
+            }
+            else
+            {
+                /* Rec data */
+                gu16LocalPacketDataLen--;
+                if(0 == gu16LocalPacketDataLen)
+                {
+                    /* 接收到完整一包数据，拷贝到应用层缓冲区 */
+                    pos_start++;
+                    i = 0;
+                    while(guiLocalPacketStart != pos_start)
+                    {
+                        buf[i] = __halbuf_read(guiLocalPacketStart++);
+                        i++;
+                    }
+
+                    return i;
+                }
+            }
+            
+        }
         
-        return packetLen;
+        pos_start++;
     }
 
     return RET_FAILED;
@@ -427,10 +316,6 @@ int32 GAgent_Local_RecAll(pgcontext pgc)
 
         pos_current += read_count;
 
-        /* step 2. transfer 0xff55 to 0xff */
-        hal_decode_data(offRec, read_count);
-
-        read_count = get_data_len(offRec, pos_current);
     }
 
     return read_count;

@@ -283,6 +283,8 @@ void Lan_GetWifiHotspots( pgcontext pgc,ppacket pTxBuf,int32 clientIndex )
     int32 ret=0;
     int32 pos=0,payloadLen=0,wifihostspotslen=0;
     int32 fd=0,i=0;
+    int32 bytesOfLen=0,len=0;
+    
     fd = pgc->ls.tcpClient[clientIndex].fd;
     resetPacket( pTxBuf );
     pbuf = pTxBuf->phead;
@@ -353,7 +355,6 @@ void Lan_GetWifiHotspots( pgcontext pgc,ppacket pTxBuf,int32 clientIndex )
         GAgent_Printf(  GAGENT_DUMP," %02X",pbuf[i] );
     }
     GAgent_Printf( GAGENT_INFO,"--------------------------------------------");
-    int32 bytesOfLen=0,len=0;
     bytesOfLen = mqtt_num_rem_len_bytes( pbuf+ 3);
     len = mqtt_parse_rem_len( pbuf+ 3 );
     GAgent_Printf( GAGENT_INFO," bytesOfLen=%d  len=%d",bytesOfLen,len );
@@ -597,7 +598,7 @@ int32 Lan_dispatchTCPData(pgcontext pgc, ppacket prxBuf,/* ppacket ptxBuf,*/ int
             break;
         case GAGENT_LAN_CMD_TEST:
             Local_Ack2TcpClient( pgc,clientIndex);
-            GAgent_ExitTest( pgc );          
+            GAgent_ExitTest( pgc );
             break;
         default:
             break;

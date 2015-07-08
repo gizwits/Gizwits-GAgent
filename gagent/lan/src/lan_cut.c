@@ -1,6 +1,7 @@
 #include "gagent.h"
 #include "lan.h"
 #include "lanudp.h"
+#include "3rdlan.h"
 #include "platform.h"
 
 
@@ -190,7 +191,8 @@ void send_broadCastPacket(pgcontext pgc,uint8* ptxBuf,uint16 cmdWord)
     int32 len = 0;
     struct sockaddr_t addr;
     memset(&addr,0,sizeof(addr));
-
+    
+    resetPacket(pgc->rtinfo.Rxbuf);
     addr = pgc->ls.addr;
 
     if(NULL == ptxBuf)
@@ -209,13 +211,21 @@ void send_broadCastPacket(pgcontext pgc,uint8* ptxBuf,uint16 cmdWord)
     return ;
 }
 
-/****************************************************************
-        FunctionName    :   GAgent_Lan_SendTcpData
-        Description     :   send buf data to TCP client.
-        return          :   void
-        Add by Will.zhou     --2015-03-17
-****************************************************************/
-void GAgent_Lan_SendTcpData(pgcontext pgc,ppacket pTxBuf)
+static void Lan_Upload_AllApp(pgcontext pgc, ppacket pTxBuf)
+{
+    uint8 i = 0;
+    
+    for(i = 0; i < LAN_TCPCLIENT_MAX; i++)
+    {
+        if(pgc->ls.tcpClient[i].fd > 0 && 
+            LAN_CLIENT_LOGIN_SUCCESS == pgc->ls.tcpClient[i].isLogin)
+        {
+            send(pgc->ls.tcpClient[i].fd, pTxBuf->phead, pTxBuf->pend - pTxBuf->phead, 0);
+        }
+    }
+}
+
+void Lan_sendTcpData(pgcontext pgc, int32 fd, uint16 cmd, int32 sn, ppacket pTxBuf)
 {
     varc sendvarc;
     uint32 dataLen;
@@ -224,10 +234,20 @@ void GAgent_Lan_SendTcpData(pgcontext pgc,ppacket pTxBuf)
 
         /* protocol(4B) | varlen(xB) | flag(1B) | cmd(2B) | p0(xB)  */
     dataLen = pTxBuf->pend - pTxBuf->ppayload + LAN_PROTOCOL_CMD_LEN + LAN_PROTOCOL_FLAG_LEN;
+    /* while cmd == 0x93/94,sn follow with cmd */
+    if(GAGENT_LAN_CMD_CTL_93 == cmd || GAGENT_LAN_CMD_CTLACK_94 == cmd)
+    {
+        dataLen += LAN_PROTOCOL_SN_LEN;
+    }
     sendvarc = Tran2varc(dataLen);
     pTxBuf->phead = pTxBuf->ppayload - sendvarc.varcbty - 
             LAN_PROTOCOL_HEAD_LEN - LAN_PROTOCOL_CMD_LEN - LAN_PROTOCOL_FLAG_LEN;
-
+    
+    /* while cmd == 0x93/94,sn follow with cmd */
+    if(GAGENT_LAN_CMD_CTL_93 == cmd || GAGENT_LAN_CMD_CTLACK_94 == cmd)
+    {
+        pTxBuf->phead -= LAN_PROTOCOL_SN_LEN;
+    }
     offset = 0;
     /* protocol */
     *(uint32 *)pTxBuf->phead = htonl(GAGENT_PROTOCOL_VERSION);
@@ -241,18 +261,82 @@ void GAgent_Lan_SendTcpData(pgcontext pgc,ppacket pTxBuf)
     /* flag */
     pTxBuf->phead[offset] = 0x00;
     offset += 1;
-    /* cmd */
-    *(uint16 *)(pTxBuf->phead + offset) = htons(0x0091);
-    offset += LAN_PROTOCOL_CMD_LEN;
 
-    for(i = 0; i < LAN_TCPCLIENT_MAX; i++)
+    /* cmd */
+    *(uint16 *)(pTxBuf->phead + offset) = htons(cmd);
+    offset += LAN_PROTOCOL_CMD_LEN;
+    switch(cmd)
     {
-        if(pgc->ls.tcpClient[i].fd > 0 && 
-            LAN_CLIENT_LOGIN_SUCCESS == pgc->ls.tcpClient[i].isLogin)
-        {
-            send(pgc->ls.tcpClient[i].fd, pTxBuf->phead, pTxBuf->pend - pTxBuf->phead, 0);
-        }
-    }    
+        case GAGENT_LAN_CMD_CTL_93:
+            sn = 0;
+            *(int32 *)(pTxBuf->phead + offset) = htonl(sn);
+            offset += LAN_PROTOCOL_SN_LEN;
+            fd = -1;
+            break;
+        case GAGENT_LAN_CMD_CTLACK_94:
+            *(int32 *)(pTxBuf->phead + offset) = htonl(sn);
+            offset += LAN_PROTOCOL_SN_LEN;
+            break;
+        case GAGENT_LAN_CMD_TRANSMIT_91:
+            break;
+        default:
+            /* not support ,return directly */
+            return ;
+            break;
+    }
+
+    if(fd >= 0)
+    {
+        send(fd, pTxBuf->phead, pTxBuf->pend - pTxBuf->phead, 0);
+    }
+    else
+    {
+        Lan_Upload_AllApp(pgc, pTxBuf);
+    }
+    
+    return ;
+}
+
+void Lan_SetClientAttrs(pgcontext pgc, int32 fd, uint16 cmd, int32 sn)
+{
+    pgc->ls.srcAttrs.sn = sn;
+    pgc->ls.srcAttrs.fd = fd;
+    pgc->ls.srcAttrs.cmd = cmd;
+}
+
+void Lan_ClearClientAttrs(pgcontext pgc, stLanAttrs_t *client)
+{
+    if(NULL != client)
+    {
+        client->sn = 0;
+        client->fd = INVALID_SOCKET;
+        client->cmd = 0;
+    }
+}
+
+/****************************************************************
+        FunctionName    :   GAgent_Lan_SendTcpData
+        Description     :   send buf data to TCP client.
+        return          :   void
+        Add by Will.zhou     --2015-03-17
+****************************************************************/
+void GAgent_Lan_SendTcpData(pgcontext pgc,ppacket pTxBuf)
+{
+    int32 fd;
+    uint16 cmd;
+    int32 sn;
+
+    fd = pgc->rtinfo.stChannelAttrs.lanClient.fd;
+    cmd = pgc->rtinfo.stChannelAttrs.lanClient.cmd;
+    sn = pgc->rtinfo.stChannelAttrs.lanClient.sn;
+
+    Lan_sendTcpData(pgc, fd, cmd, sn, pTxBuf);
+    if(GAGENT_LAN_CMD_CTL_93 == cmd)
+    {
+        Lan_sendTcpData(pgc, fd, GAGENT_LAN_CMD_TRANSMIT_91, sn, pTxBuf);
+    }
+    
+    return ;
 }
 /****************************************************************
         FunctionName        :   CreateUDPBroadCastServer.
@@ -303,7 +387,7 @@ void DestroyUDPBroadCastServer(pgcontext pgc)
 //      pgc->ls.broResourceNum = 0;
 //   }
 }
-
+ 
 void GAgent_LanTick( pgcontext pgc,uint32 dTime_s )
 {
   
@@ -318,7 +402,6 @@ void GAgent_LANInit(pgcontext pgc)
 {
     GAgent_Printf( GAGENT_WARNING,"LAN module has been cut!\n");
 }
-
 /****************************************************************
         FunctionName        :   LAN_InitSocket.
         Description         :      create tcp/udp server.
@@ -337,6 +420,8 @@ int32 LAN_InitSocket(pgcontext pgc)
     Lan_CreateUDPServer(&(pgc->ls.udpServerFd), LAN_UDP_SERVER_PORT );
     CreateUDPBroadCastServer(pgc);//startup broadcast
     return 0;
-}
+}   
+  
+
 
 

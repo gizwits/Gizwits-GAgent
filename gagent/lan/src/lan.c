@@ -538,7 +538,6 @@ void GAgent_LANInit(pgcontext pgc)
     newStatus = pgc->rtinfo.GAgentStatus;
     //newStatus |=WIFI_CLOUD_CONNECTED;
     GAgent_Printf( GAGENT_DEBUG,"file:%s function:%s line:%d ",__FILE__,__FUNCTION__,__LINE__ );
-    newStatus = GAgent_DevCheckWifiStatus( newStatus );
 }
 
 /****************************************************************

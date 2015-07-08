@@ -1,7 +1,6 @@
 #include "stdio.h"
 #include "gagent.h"
 #include "gagent_typedef.h"
-
 extern pgcontext pgContextData;
 
 int main()

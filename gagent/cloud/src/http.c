@@ -1,6 +1,7 @@
 #include "gagent.h"
 #include "http.h"
 #include "string.h"
+
 extern int32 g_MQTTStatus;
 
 int32 Http_POST( int32 socketid, const int8 *host,const int8 *passcode,const int8 *mac,const int8 *product_key )
@@ -311,7 +312,7 @@ int32 CheckFirmwareUpgrade(const int8 *host, const int8 *did,enum OTATYPE_T type
     totalLen =strlen( getBuf );
     GAgent_Printf(GAGENT_INFO,"Http_post_totalLen=%d\r\n",totalLen);
     ret = send( socketid, getBuf,totalLen,0 );
-
+    GAgent_Printf( GAGENT_DEBUG,"Req OTA Buf:\n%s",getBuf );
     free(getBuf);
     if(ret>0) 
         return RET_SUCCESS;
@@ -534,11 +535,12 @@ int32 Http_BodyLen( uint8 *httpbuf )
    bodylen = atoi(bodyLenbuf);
    return bodylen;
 }
-int32 Http_GetHost(int8 *downloadurl,int8 *host,int8 *url )
+int32 Http_GetHost( int8 *downloadurl,int8 **host,int8 **url )
 {
    int8 *p_start = NULL;
    int8 *p_end =NULL; 
    int32 len;
+   int8 hostlen;
    len = strlen(downloadurl);
    p_start = strstr( downloadurl,"http://" );
    if(p_start==NULL) 
@@ -547,20 +549,33 @@ int32 Http_GetHost(int8 *downloadurl,int8 *host,int8 *url )
    p_end = strstr( p_start,"/");
    if(p_end==NULL)
        return RET_FAILED;
-   memcpy(host,p_start,p_end-p_start);
-   host[p_end-p_start] = '\0';
+   *host = (char *)malloc(p_end-p_start+1);
+   if( NULL == *host )
+   {
+       GAgent_Printf(GAGENT_WARNING, "OTA host malloc fail!");
+       return RET_FAILED; 
+   }
+   memcpy(&(*host)[0],p_start,p_end-p_start);
+   (*host)[p_end-p_start] = '\0';
+   hostlen = p_end-p_start;
    
    p_start = p_end;
    if(p_start==NULL) 
        return RET_FAILED;
-   p_end = strstr( p_start+1,"\0");
+   p_end = p_start + strlen(downloadurl) - hostlen;
    if(p_end==NULL)
        return RET_FAILED;
-   memcpy(url,p_start,30);
-   
+   *url = (char *)malloc(p_end-p_start+1);
+   if( NULL == *url )
+   {
+       GAgent_Printf(GAGENT_WARNING, "OTA url malloc fail!");
+       return RET_FAILED;
+   }
+   memcpy(&(*url)[0],p_start,p_end-p_start);
+   (*url)[p_end-p_start] = '\0';
+  
    return RET_SUCCESS;
 }
-
 
 int32 Http_GetSV( uint8 *httpbuf,int8 *SV )
 {
@@ -588,12 +603,12 @@ int32 Http_GetSV( uint8 *httpbuf,int8 *SV )
 *   MD5       :  MD5 form http head(16b).
 *           add by alex.lin ---2014-12-04
 *************************************************************/
-int32 Http_GetMD5( uint8 *httpbuf,int8 *MD5,int8 *strMD5)
+int32 Http_GetMD5( uint8 *httpbuf,uint8 *MD5,int8 *strMD5)
 {
    int8 *p_start = NULL;
    int8 *p_end =NULL;
    int8 MD5_TMP[16];
-   int8 Temp[3]={0};
+   uint8 Temp[3]={0};
    int8 *str;
    int32 i=0,j=0;
    p_start = strstr( (char *)httpbuf,"Firmware-MD5: ");
@@ -605,6 +620,7 @@ int32 Http_GetMD5( uint8 *httpbuf,int8 *MD5,int8 *strMD5)
        return 1;
    if((p_end-p_start)!=32) return 1;
    memcpy( strMD5,p_start,32 );
+   strMD5[32] = '\0';
    memcpy( MD5,p_start,16);
    MD5[16]= '\0';
 
@@ -617,13 +633,64 @@ int32 Http_GetMD5( uint8 *httpbuf,int8 *MD5,int8 *strMD5)
        j++;
    }
    memcpy(MD5,MD5_TMP,16);
-   GAgent_Printf(GAGENT_INFO," MD5 From HTTP :----------------");
+   GAgent_Printf(GAGENT_INFO," MD5 From HTTP:\n");
    
    for(j=0;j<16;j++)
-       GAgent_Printf(GAGENT_DUMP,"%02X",MD5[j]);
+       GAgent_Printf(GAGENT_DUMP,"%02x",MD5[j]);
    
    return 16;
 }
+int32 Http_ReqGetFirmware( int8 *url,int8 *host,int32 socketid )
+{
+    static int8 *getBuf = NULL;
+    int32 totalLen=0;
+    int32 ret=0;
+        
+    getBuf = (int8*)malloc( 200 );
+    if(getBuf == NULL)
+    {
+        if(NULL!=host)
+        {
+           free(host);
+           host = NULL;
+        }
+        if(NULL!=url)
+        {
+           free(url);
+           url = NULL;
+        }   
+        return RET_FAILED;
+    }
+    memset( getBuf,0,200 );
+    snprintf( getBuf,200,"%s %s %s%s%s %s%s%s%s",
+              "GET",url,"HTTP/1.1",kCRLFNewLine,
+              "Host:",host,kCRLFNewLine,
+              "Content-Type: application/text",kCRLFLineEnding);
+    totalLen =strlen( getBuf );
+    ret = send( socketid, getBuf,totalLen,0 );
+    free(getBuf); 
+    getBuf = NULL;
+
+    if(NULL!=host)
+    {
+       free(host);
+       host = NULL;
+    }
+    if(NULL!=url)
+    {
+       free(url);
+       url = NULL;
+    }
+    if(ret<=0 ) 
+    {
+        return RET_FAILED;
+    }
+    else
+    {
+        return RET_SUCCESS;
+    }    
+}
+
 /****************************************************************
 *       FunctionName     :      Http_Get3rdCloudInfo
 *       Description      :      get 3rd cloud name and info form 

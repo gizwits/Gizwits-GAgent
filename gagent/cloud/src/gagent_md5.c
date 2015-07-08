@@ -1,12 +1,11 @@
 #include <string.h>
-#include "md5.h"
-
+#include "gagent_md5.h"
 unsigned char PADDING[] = { 0x80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
 
-void MD5Init(MD5_CTX *context)
+void GAgent_MD5Init(MD5_CTX *context)
 {
 	context->count[0] = 0;
 	context->count[1] = 0;
@@ -16,7 +15,7 @@ void MD5Init(MD5_CTX *context)
 	context->state[3] = 0x10325476;
 }
 
-void MD5Update(MD5_CTX *context, unsigned char *input, unsigned int inputlen)
+void GAgent_MD5Update(MD5_CTX *context, unsigned char *input, unsigned int inputlen)
 {
 	unsigned int i = 0, index = 0, partlen = 0;
 	index = (context->count[0] >> 3) & 0x3F;
@@ -29,9 +28,9 @@ void MD5Update(MD5_CTX *context, unsigned char *input, unsigned int inputlen)
 	if (inputlen >= partlen)
 	{
 		memcpy(&context->buffer[index], input, partlen);
-		MD5Transform(context->state, context->buffer);
+		GAgent_MD5Transform(context->state, context->buffer);
 		for (i = partlen; i + 64 <= inputlen; i += 64)
-			MD5Transform(context->state, &input[i]);
+			GAgent_MD5Transform(context->state, &input[i]);
 		index = 0;
 	}
 	else
@@ -40,19 +39,19 @@ void MD5Update(MD5_CTX *context, unsigned char *input, unsigned int inputlen)
 	}
 	memcpy(&context->buffer[index], &input[i], inputlen - i);
 }
-void MD5Final(MD5_CTX *context, unsigned char digest[16])
+void GAgent_MD5Final(MD5_CTX *context, unsigned char digest[16])
 {
 	unsigned int index = 0, padlen = 0;
 	unsigned char bits[8];
 	index = (context->count[0] >> 3) & 0x3F;
 	padlen = (index < 56) ? (56 - index) : (120 - index);
-	MD5Encode(bits, context->count, 8);
-	MD5Update(context, PADDING, padlen);
-	MD5Update(context, bits, 8);
-	MD5Encode(digest, context->state, 16);
+	GAgent_MD5Encode(bits, context->count, 8);
+	GAgent_MD5Update(context, PADDING, padlen);
+	GAgent_MD5Update(context, bits, 8);
+	GAgent_MD5Encode(digest, context->state, 16);
 }
 
-void MD5Encode(unsigned char *output, unsigned int *input, unsigned int len)
+void GAgent_MD5Encode(unsigned char *output, unsigned int *input, unsigned int len)
 {
 	unsigned int i = 0, j = 0;
 	while (j < len)
@@ -66,7 +65,7 @@ void MD5Encode(unsigned char *output, unsigned int *input, unsigned int len)
 	}
 }
 
-void MD5Decode(unsigned int *output, unsigned char *input, unsigned int len)
+void GAgent_MD5Decode(unsigned int *output, unsigned char *input, unsigned int len)
 {
 	unsigned int i = 0, j = 0;
 	while (j < len)
@@ -80,14 +79,14 @@ void MD5Decode(unsigned int *output, unsigned char *input, unsigned int len)
 	}
 }
 
-void MD5Transform(unsigned int state[4], unsigned char block[64])
+void GAgent_MD5Transform(unsigned int state[4], unsigned char block[64])
 {
 	unsigned int a = state[0];
 	unsigned int b = state[1];
 	unsigned int c = state[2];
 	unsigned int d = state[3];
 	unsigned int x[64];
-	MD5Decode(x, block, 64);
+	GAgent_MD5Decode(x, block, 64);
 	FF(a, b, c, d, x[0], 7, 0xd76aa478); /* 1 */
 	FF(d, a, b, c, x[1], 12, 0xe8c7b756); /* 2 */
 	FF(c, d, a, b, x[2], 17, 0x242070db); /* 3 */

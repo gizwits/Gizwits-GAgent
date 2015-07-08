@@ -3,7 +3,6 @@
 #include "lan.h"
 #include "local.h"
 #include "hal_receive.h"
-#include "mcu.h"
 #include "cloud.h"
 /****************************************************************
 FunctionName    :   GAgent_LocalReceData

@@ -1,32 +1,7 @@
 #include "netevent.h"
 #include "gagent.h"
-/****************************************************************
-Function    :   GAgent_DevCheckWifiStatus
-Description :   check the wifi status and will set the wifi status
-                and return it.
-bit0        :   in soft ap mode     1 is on ,0 is off.
-bit1        :   in station mode     1 is on ,0 is off.
-bit2        :   in onboarding mode  1 is on ,0 is off.
-...
-bit4        :   if is connected to WiFi router,1 is on,0 is off.
-bit6-bit8   :   only is meaningful if bit=1,this 3-bits integer 
-                indicates the WiFi signal strength of the connected
-                WiFi router. Range is from 0 to 7 ,0 is low and 
-                7 is high.
-wifistatus  :   wifi current status.
-return      :   the new wifi status.
-Add by Alex.lin     --2015-04-17.
-****************************************************************/
-uint16 GAgent_DevCheckWifiStatus( uint16 wifistatus  )
-{
-    static uint16 halWiFiStatus=0;
-    
-    if( 0xFFFF!=wifistatus )
-    {
-        halWiFiStatus = wifistatus;
-    }
-    return halWiFiStatus;
-}
+#include "gagent_md5.h"
+
 /****************************************************************
 Function    :   GAgent_CreateTcpServer
 Description :   creat TCP server.
@@ -147,4 +122,87 @@ int8 GAgent_DRVWiFiPower( pgcontext pgc )
 {
     
     return 100;
+}
+uint32 Http_ResGetFirmware( pgcontext pgc,int32 socketid )
+{
+    int ret;
+    uint8 *httpReceiveBuf = NULL;
+    int headlen = 0;
+    char MD5[16] = {0};
+    uint8 md5_calc[16] = {0};
+    int offset = 0;
+    uint8 *buf = NULL;
+    int writelen = 0;
+    MD5_CTX ctx;
+
+    httpReceiveBuf = malloc(SOCKET_RECBUFFER_LEN);
+    if(httpReceiveBuf == NULL)
+    {
+        GAgent_Printf(GAGENT_INFO, "[CLOUD]%s malloc fail!len:%d", __func__, SOCKET_RECBUFFER_LEN);
+        return RET_FAILED;
+    }
+
+    ret = Http_ReadSocket( socketid, httpReceiveBuf, SOCKET_RECBUFFER_LEN );  
+    if(ret <=0 ) 
+    { 
+        free(httpReceiveBuf);
+        return RET_FAILED;
+    }
+    
+    ret = Http_Response_Code( httpReceiveBuf );
+    if(200 != ret)
+    {
+        free(httpReceiveBuf);
+        return RET_FAILED;
+    }
+    headlen = Http_HeadLen( httpReceiveBuf );
+    pgc->rtinfo.filelen = Http_BodyLen( httpReceiveBuf );
+    pgc->rtinfo.MD5 = (char *)malloc(32+1);
+    if( pgc->rtinfo.MD5 == NULL )
+    {
+        return RET_FAILED;
+    }
+    Http_GetMD5( httpReceiveBuf,MD5,pgc->rtinfo.MD5);
+    Http_GetSV( httpReceiveBuf,(char *)pgc->mcu.soft_ver);
+  
+    offset = 0;
+    buf = httpReceiveBuf + headlen;
+    writelen = SOCKET_RECBUFFER_LEN - headlen;
+    GAgent_MD5Init(&ctx);
+    do
+    {
+        ret = GAgent_SaveUpgradFirmware( offset, buf, writelen );
+        if(ret < 0)
+        {
+            GAgent_Printf(GAGENT_INFO, "[CLOUD]%s OTA upgrad fail at off:0x%x", __func__, offset);
+            free(httpReceiveBuf);
+            return RET_FAILED;
+        }
+        offset += writelen;
+        GAgent_MD5Update(&ctx, buf, writelen);
+        writelen = pgc->rtinfo.filelen - offset;
+        if(0 == writelen)
+            break;
+        if(writelen > SOCKET_RECBUFFER_LEN)
+        {
+            writelen = SOCKET_RECBUFFER_LEN;
+        }
+        writelen = Http_ReadSocket( socketid, httpReceiveBuf, writelen );    
+        if(writelen <= 0 )
+        {
+            GAgent_Printf(GAGENT_INFO,"[CLOUD]%s, socket recv ota file fail!recived:0x%x", __func__, offset);
+            free(httpReceiveBuf);
+            return RET_FAILED;
+        }
+        buf = httpReceiveBuf;
+    }while(offset < pgc->rtinfo.filelen);
+    GAgent_MD5Final(&ctx, md5_calc);
+    if(memcmp(MD5, md5_calc, 16) != 0)
+    {
+        GAgent_Printf(GAGENT_WARNING,"[CLOUD]md5 fail!");
+        free(httpReceiveBuf);
+        return RET_FAILED;
+    }
+    free(httpReceiveBuf);
+    return RET_SUCCESS;
 }

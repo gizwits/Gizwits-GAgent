@@ -16,10 +16,10 @@ void GAgent_DevLED_Green( uint8 onoff );
 uint32 GAgent_DevGetConfigData( gconfig *pConfig );
 uint32 GAgent_DevSaveConfigData( gconfig *pConfig);
 void GAgent_LocalDataIOInit( pgcontext pgc );
+uint32 GAgent_ReadOTAFile( uint16 offset, int8* buf,int32 len );
+uint32 GAgent_DeleteFirmware( int32 offset,int32 filelen );
 
 /*********Net event function************/
-// return the new wifistatus like wifistation-up wifistation-down ...
-uint16 GAgent_DevCheckWifiStatus( uint16 wifistatus  );
 void GAgent_OpenAirlink( int32 timeout_s );
 void GAgent_AirlinkResult( pgcontext pgc );
 int8 GAgent_DRVBootConfigWiFiMode( void );
@@ -34,9 +34,8 @@ void GAgent_DRVWiFiStopScan( void );
 NetHostList_str *GAgentDRVWiFiScanResult( NetHostList_str *aplist );
 void GAgent_DRVWiFiPowerScan( pgcontext pgc );
 int8 GAgent_DRVWiFiPowerScanResult( pgcontext pgc );
-uint32 GAgent_OTAByUrl( pgcontext pgc,int32 socketid,int8 *sMD5,int32 *filelen );
 int32 GAgent_StartUpgrade();
-
+int32 GAgent_WIFIOTAByUrl( pgcontext pgc,int8 *szdownloadUrl );
 
 /*********Net socket function************/
 uint32 GAgent_GetHostByName( int8 *domain, int8 *IPAddress );

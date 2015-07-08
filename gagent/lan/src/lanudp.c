@@ -108,10 +108,8 @@ static void Lan_dispatchUdpData(pgcontext pgc, struct sockaddr_t *paddr,
             }
             else
             {
-                TempWiFiStatus &=~ WIFI_MODE_ONBOARDING;
-                //GAgent_DRVWiFi_APModeStop( pgc );
                 GAgent_Printf( GAGENT_DEBUG,"file:%s function:%s line:%d ",__FILE__,__FUNCTION__,__LINE__ );
-                TempWiFiStatus = GAgent_DevCheckWifiStatus( TempWiFiStatus );
+                TempWiFiStatus = GAgent_DevCheckWifiStatus( WIFI_MODE_ONBOARDING,0 );
                 //GAgent_DRVWiFi_StationCustomModeStart(pgc->gc.wifi_ssid, pgc->gc.wifi_key, WIFI_MODE_STATION);
             }
             resetPacket(prxBuf);
@@ -168,6 +166,10 @@ static void LAN_onDiscoverAck(pgcontext pgc, uint8 *ptxBuf, struct sockaddr_t *p
     {
         GAgent_Printf(GAGENT_ERROR,"send discover response fail,len:%d.ret:0x%x",
                         len, ret);
+    }
+    else
+    {
+        GAgent_Printf( GAGENT_DEBUG,"GAgent ack app discover ret=%d...",ret);
     }
 }
 
