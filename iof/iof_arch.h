@@ -4,11 +4,11 @@
 #include "platform.h"
 //return wifistatus. 
 void CoreInit( void );
-void GAgent_DevReset();
+void GAgent_DevReset( void );
 void GAgent_DevInit( pgcontext pgc );
 void GAgent_DevTick( void );
-uint32 GAgent_GetDevTime_MS();
-uint32 GAgent_GetDevTime_S();
+uint32 GAgent_GetDevTime_MS( void );
+uint32 GAgent_GetDevTime_S( void );
 int8 GAgent_DevGetMacAddress( uint8* szmac );
 void GAgent_DevLED_Red( uint8 onoff );
 void GAgent_DevLED_Green( uint8 onoff );
@@ -16,7 +16,7 @@ void GAgent_DevLED_Green( uint8 onoff );
 uint32 GAgent_DevGetConfigData( gconfig *pConfig );
 uint32 GAgent_DevSaveConfigData( gconfig *pConfig);
 void GAgent_LocalDataIOInit( pgcontext pgc );
-uint32 GAgent_ReadOTAFile( uint16 offset, int8* buf,int32 len );
+uint32 GAgent_ReadOTAFile( uint32 offset, int8* buf,uint32 len );
 uint32 GAgent_DeleteFirmware( int32 offset,int32 filelen );
 
 /*********Net event function************/
@@ -27,14 +27,15 @@ int8 GAgent_DRVGetWiFiStartMode( pgcontext pgc );
 int8 GAgent_DRVSetWiFiStartMode( pgcontext pgc,uint32 mode );
 int16 GAgent_DRV_WiFi_SoftAPModeStart( const int8* ap_name,const int8 *ap_password,int16 wifiStatus );
 int16 GAgent_DRVWiFi_StationCustomModeStart(int8 *StaSsid,int8 *StaPass,uint16 wifiStatus );
-int16 GAgent_DRVWiFi_StationDisconnect();
+int16 GAgent_DRVWiFi_StationDisconnect( void );
 void GAgent_DRVWiFi_APModeStop( pgcontext pgc );
 void GAgent_DRVWiFiStartScan( void );
 void GAgent_DRVWiFiStopScan( void );
 NetHostList_str *GAgentDRVWiFiScanResult( NetHostList_str *aplist );
 void GAgent_DRVWiFiPowerScan( pgcontext pgc );
 int8 GAgent_DRVWiFiPowerScanResult( pgcontext pgc );
-int32 GAgent_StartUpgrade();
+int32 GAgent_StartUpgrade( void );
+uint32 Http_ResGetFirmware( pgcontext pgc,int32 socketid );
 int32 GAgent_WIFIOTAByUrl( pgcontext pgc,int8 *szdownloadUrl );
 
 /*********Net socket function************/

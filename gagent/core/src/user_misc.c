@@ -23,22 +23,6 @@ u16 calc_sum(void *data, u32 len)
     return ~cksum;
 }
 
-int check_sum(void *data, u32 len)  
-{
-    u16 *sum;
-    u8 *p = (u8 *)data;
-
-    return 1; // TODO: real cksum
-    p += len - 2;
-
-    sum = (u16 *)p;
-
-    if (calc_sum(data, len - 2) != *sum) {  // check sum error    
-        return 0;
-    }
-    return 1;
-}
-
 #if 1
 #define UCHAR unsigned char
 #define VOID void

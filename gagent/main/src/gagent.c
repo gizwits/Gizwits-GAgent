@@ -16,7 +16,8 @@ void GAgent_Init( pgcontext *pgc )
 {
     GAgent_DevInit( *pgc );
     GAgent_NewVar( pgc );
-    GAgent_loglevelSet( /*GAGENT_DUMP*/GAGENT_WARNING );
+    /* -1: no log */
+    GAgent_loglevelSet( /*-1*/GAGENT_DUMP/*GAGENT_INFO*//*GAGENT_WARNING*/ );
 
     GAgent_VarInit( pgc );
     GAgent_LocalInit( *pgc );
@@ -82,6 +83,7 @@ void GAgent_VarInit( pgcontext *pgc )
 
     if((*pgc)->gc.magicNumber != GAGENT_MAGIC_NUM)
     {
+        //GAgent_Printf( GAGENT_INFO,"GAGENT_MAGIC_NUM different ...");
         memset(&((*pgc)->gc), 0, sizeof(GAGENT_CONFIG_S));
         (*pgc)->gc.magicNumber = GAGENT_MAGIC_NUM;
     }
@@ -380,6 +382,11 @@ void GAgent_RefreshIPTick( pgcontext pgc,uint32 dTime_s )
         GAgent_Printf( GAGENT_INFO," not in WIFI_STATION_CONNECTED ");
         return ;
     }
+    if( ((pgc->rtinfo.GAgentStatus)&WIFI_MODE_BINDING)!=WIFI_MODE_BINDING )
+    {
+        GAgent_Printf( GAGENT_INFO," in WIFI_MODE_BINDING ");
+        return ;
+    }
     pgc->rtinfo.waninfo.RefreshIPLastTime+=dTime_s;
     if( (pgc->rtinfo.waninfo.RefreshIPLastTime) >= (pgc->rtinfo.waninfo.RefreshIPTime) )
     {
@@ -511,7 +518,7 @@ void GAgent_Config( uint8 typed,pgcontext pgc )
 
             tempWiFiStatus = pgc->rtinfo.GAgentStatus;
             pgc->gc.flag  &=~ XPG_CFG_FLAG_CONFIG;
-            GAgent_DevLED_Green( 1 );
+            GAgent_DevLED_Red( 0 );
             GAgent_OpenAirlink( timeout );
             GAgent_Printf( GAGENT_INFO,"OpenAirlink...");
             while( timeout )
@@ -525,18 +532,21 @@ void GAgent_Config( uint8 typed,pgcontext pgc )
                     pgc->gc.flag |= XPG_CFG_FLAG_CONNECTED;
                     pgc->ls.onboardingBroadCastTime = SEND_UDP_DATA_TIMES;
                     GAgent_DevSaveConfigData( &(pgc->gc) );
-                    tempWiFiStatus |= GAgent_DRVWiFi_StationCustomModeStart( pgc->gc.wifi_ssid,pgc->gc.wifi_key,tempWiFiStatus );  
+                    //tempWiFiStatus |= GAgent_DRVWiFi_StationCustomModeStart( pgc->gc.wifi_ssid,pgc->gc.wifi_key,tempWiFiStatus );  
+                    GAgent_WiFiInit( pgc );
                     CreateUDPBroadCastServer( pgc );
                     break;
                 }
-                GAgent_DevLED_Red( (timeout%2) );
+                GAgent_DevLED_Green( (timeout%2) );
             }
+            GAgent_DevCheckWifiStatus( WIFI_MODE_ONBOARDING,0 );
             if( timeout<=0 )
             {
                     GAgent_DevCheckWifiStatus( WIFI_MODE_ONBOARDING,1 );
                     GAgent_Printf( GAGENT_INFO,"AirLink Timeout ...");
                     GAgent_Printf( GAGENT_INFO,"Into SoftAp Config...");
             }
+
         break;
         }
         default :
@@ -651,7 +661,6 @@ void GAgent_Tick( pgcontext pgc )
     dTime = GAgent_BaseTick();
     if( dTime<1 )
         return ;
-
     GAgent_DevTick();
     GAgent_CloudTick( pgc,dTime );
     GAgent_LocalTick( pgc,dTime );

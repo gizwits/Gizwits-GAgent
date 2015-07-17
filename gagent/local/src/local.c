@@ -159,9 +159,6 @@ Add by Alex.lin     --2015-04-07
 ****************************************************************/
 void Local_HalInit( pgcontext pgc )
 {
-    int totalCap = BUF_LEN + BUF_HEADLEN;
-    int bufCap = BUF_LEN;
-    
     hal_ReceiveInit();
     pgc->mcu.isBusy = 0;
 }
@@ -280,7 +277,7 @@ Add by Alex.lin     --2015-04-07
 ****************************************************************/
 int32 GAgent_LocalDataWriteP0( pgcontext pgc,int32 fd,ppacket pTxBuf,uint8 cmd )
 {
-    int8 ret = RET_FAILED;
+    int32 ret = RET_FAILED;
     uint16 datalen = 0;
     uint16 flag = 0;
     uint16 sendLen = 0;
@@ -470,9 +467,7 @@ Add by Alex.lin     --2015-04-18
 void GAgent_Reset( pgcontext pgc )
 {
     GAgent_Clean_Config(pgc);
-    
     sleep(2);
-    
     GAgent_DevReset();
 }
 /****************************************************************
@@ -509,7 +504,7 @@ void GAgent_Clean_Config( pgcontext pgc )
 }
 int32 GAgent_LocalSendUpgrade(pgcontext pgc,int32 fd,ppacket pTxBuf,uint16 piecelen,uint8 cmd)
 {
-    uint16 piecenum = 1;
+    uint32 piecenum = 1;
     uint16 piececount;
     uint16 remainlen;
     uint32 offset;
@@ -794,14 +789,12 @@ uint32 GAgent_LocalDataHandle( pgcontext pgc,ppacket Rxbuf,int32 RxLen /*,ppacke
                 MD5len = (localRxbuf[8]<<8) + localRxbuf[8+1];
                 for( i=0; i<MD5len; i++ )
                     MD5[i] = localRxbuf[8+2+i];
-                if( strcmp(pgc->rtinfo.MD5, MD5) )
+                if( strcmp(pgc->mcu.MD5, MD5) )
                 {
                     GAgent_Printf(GAGENT_WARNING,"MD5 match failed!\n");
-                    free(pgc->rtinfo.MD5);
                 }
                 else
                 {
-                    free(pgc->rtinfo.MD5);
                     GAgent_Printf(GAGENT_CRITICAL,"start send firmware to MCU!\n");
                     piecelen = (localRxbuf[8+2+MD5len]<<8) + localRxbuf[8+2+MD5len+1];
                     if( RET_SUCCESS == GAgent_LocalSendUpgrade(pgc,pgc->rtinfo.local.uart_fd, Rxbuf, piecelen, GAGENT_SEND_UPGRADE) )

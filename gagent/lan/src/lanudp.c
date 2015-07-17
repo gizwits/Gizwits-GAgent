@@ -43,7 +43,12 @@ void Lan_udpDataHandle(pgcontext pgc, ppacket prxBuf, int32 len)
             recLen = Socket_recvfrom(pgc->ls.udpServerFd, prxBuf->phead, len,
                 &addr, (socklen_t *)&addrLen);
             GAgent_Printf( GAGENT_INFO,"UDP RECEIVE LEN = %d error=%d ",recLen,errno );
-            if( recLen<=0 ) return ;
+            if( recLen<=0 )
+            {
+                GAgent_Printf( GAGENT_ERROR,"Need to Restart Lan udp Server!!!");
+                Lan_CreateUDPServer( &(pgc->ls.udpServerFd), LAN_UDP_SERVER_PORT );
+                return ;
+            }
             Lan_dispatchUdpData(pgc, &addr, prxBuf , recLen);
         }
     }

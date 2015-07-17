@@ -18,7 +18,7 @@ uint32 GAgent_Get_Gserver_Time(uint32 *clock,uint8 *Http_recevieBuf,int32 respon
 int32 Cloud_InitSocket( int32 iSocketId,int8 *p_szServerIPAddr,int32 port,int8 flag );
 
 uint32 Cloud_ReqRegister( pgcontext pgc );
-int8 Cloud_ResRegister( uint8 *cloudConfiRxbuf,int32 buflen,int8 *pDID,int32 respondCode );
+int32 Cloud_ResRegister( uint8 *cloudConfiRxbuf,int32 buflen,int8 *pDID,int32 respondCode );
 uint32 Cloud_ReqGetFid( pgcontext pgc,enum OTATYPE_T type );
 int8 Cloud_ResGetFid( int8 *download_url, int8 *fwver, uint8 *cloudConfiRxbuf,int32 respondCode );
 uint32 Cloud_ReqProvision( pgcontext pgc );
@@ -41,3 +41,4 @@ void Cloud_ClearClientAttrs(pgcontext pgc, stCloudAttrs_t *client);
 void Cloud_SetClientAttrs(pgcontext pgc, uint8 *clientid, uint16 cmd, int32 sn);
 
 #endif
+

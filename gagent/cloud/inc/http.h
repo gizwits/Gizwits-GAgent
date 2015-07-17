@@ -18,11 +18,9 @@ int32 Http_POST( int32 socketid, const int8 *host,const int8 *passcode,const int
 int32 Http_GET( const int8 *host,const int8 *did,int32 socketid );
 int32 Http_GetHost( int8 *downloadurl,int8 **host,int8 **url );
 int32 Http_ReadSocket( int32 socket,uint8 *Http_recevieBuf,int32 bufLen );
-int32 Http_handlePacket();
 int32 Http_Response_DID( uint8 *Http_recevieBuf,int8 *DID );
 int32 Http_Response_Code( uint8 *Http_recevieBuf );
 int32 Http_getdomain_port( uint8 *Http_recevieBuf,int8 *domain, int32 *port );
-int32 Http_Sent_Provision();
 int32 CheckFirmwareUpgrade(const int8 *host, const int8 *did,enum OTATYPE_T type,
                                   const int8 *passcode,const int8 *hard_version, 
                                   const int8 *soft_version, int32 socketid );

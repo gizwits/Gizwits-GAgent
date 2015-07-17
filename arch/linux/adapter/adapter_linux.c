@@ -179,7 +179,7 @@ uint32 GAgent_SaveFile( int offset,uint8 *buf,int len )
     close(fd);
     return RET_SUCCESS;
 }
-uint32 GAgent_ReadFile( uint16 offset,int8* buf,int32 len )
+uint32 GAgent_ReadFile( uint32 offset,int8* buf,uint32 len )
 {
     int fd;
     int ret;
@@ -460,7 +460,7 @@ int32 GAgent_StartUpgrade()
  remove("./ota.bin");
  return 0;
 }
-uint32 GAgent_ReadOTAFile( uint16 offset,int8* buf,int32 len )
+uint32 GAgent_ReadOTAFile( uint32 offset,int8* buf,uint32 len )
 {
     return  GAgent_ReadFile( offset, buf, len );
 }

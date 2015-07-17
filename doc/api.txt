@@ -2,7 +2,6 @@
 
     void GAgent_init();
     GAgent_Tick();
-    GAgent_Exit();
     uint32_t GAgent_Cloud_Send( uint8_t *buf,uint32_t buflen );
     uint32_t GAgent_Cloud_GetPacket(uint8_t *buffer, uint32_t* len);
     uint32_t GAgent_Lan_Send( uint8_t *buf,uint32_t buflen );
@@ -21,7 +20,7 @@
 
 --cloud
     uint32_t Cloud_ReqRegister();
-    uint32_t Cloud_ResRegister();
+    int32_t Cloud_ResRegister();
     uint32_t Cloud_ReqDisable();
     uint32_t Cloud_ResDisable();
     uint32_t Cloud_ReqGetFid();
@@ -52,7 +51,6 @@
     --HTTP
          Http_Disable_DID();
          Http_Response_DID();
-         Http_Sent_Provision();
          Http_GetTarget();
          HTTP_DoGetTargetId();
          Http_JD_Get_uuid_req();

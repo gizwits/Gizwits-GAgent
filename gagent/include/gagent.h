@@ -229,12 +229,9 @@ int32 GAgent_Cloud_GetPacket( pgcontext pgc,ppacket pbuf , int32 buflen);
 void GAgent_Cloud_Handle( pgcontext pgc, ppacket Rxbuf,int32 length );
 uint32 GAgent_Cloud_SendData( pgcontext pgc,ppacket pbuf, int32 buflen );
 int32 GAgent_Cloud_OTAByUrl( pgcontext pgc,int8 *downloadUrl,OTATYPE otatype );
-uint32 GAgent_Cloud_Disconnect();
 /********************************************** GAgent Lan API **********************************************/
 uint32 GAgent_Lan_Handle(pgcontext pgc, ppacket prxBuf, int32 len);
-uint32 GAgent_Lan_SendData();
 void GAgent_DoTcpWebConfig( pgcontext pgc );
-uint32 GAgent_Exit();
 
 /********************************************** GAgent Local API **********************************************/
 /* GAgent receive data hook function */
@@ -270,7 +267,7 @@ uint8 GAgent_EnterTest( pgcontext pgc );
 uint8 GAgent_ExitTest( pgcontext pgc );
 int8 GAgent_GetStaWiFiLevel( int8 wifiRSSI );
 
-uint32 GAgent_BaseTick();
+uint32 GAgent_BaseTick( void );
 void GAgent_Tick( pgcontext pgc );
 void GAgent_CloudTick( pgcontext pgc,uint32 dTime_s);
 void GAgent_LocalTick( pgcontext pgc,uint32 dTime_s );

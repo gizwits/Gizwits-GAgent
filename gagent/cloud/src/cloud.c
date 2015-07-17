@@ -4,7 +4,7 @@
 #include "cloud.h"
 #include "3rdcloud.h"
 #include "utils.h"
-#include "netevent.h"
+//#include "netevent.h"
 
 /*
 return 0 OTA SUCCESS
@@ -14,17 +14,17 @@ int32 GAgent_MCUOTAByUrl( pgcontext pgc,int8 *downloadUrl )
     
     int32 ret = 0;
     int32 http_socketid = -1;
-    int8 OTA_IP[32]={0};
+    uint8 OTA_IP[32]={0};
     int8 *url = NULL;
-    int8 *host = NULL;   
-    if(RET_FAILED == Http_GetHost( downloadUrl, &host, &url ) )
+    int8 *host = NULL;
+    if( RET_FAILED == Http_GetHost( downloadUrl,&host,&url ) )
     {
         return RET_FAILED;
     }
     ret = GAgent_GetHostByName( host,OTA_IP );
     if( ret!=0 )
     {
-        GAgent_Printf( GAGENT_INFO,"file:%s function:%s line:%d ",__FILE__,__FUNCTION__,__LINE__ );
+        GAgent_Printf( GAGENT_DEBUG,"file:%s function:%s line:%d ",__FILE__,__FUNCTION__,__LINE__ );
         return RET_FAILED;
     }
     http_socketid = Cloud_InitSocket( http_socketid,OTA_IP, 80, 0 );
@@ -33,7 +33,7 @@ int32 GAgent_MCUOTAByUrl( pgcontext pgc,int8 *downloadUrl )
     ret = Http_ReqGetFirmware( url,host,http_socketid );
     if( RET_SUCCESS == ret )
     {
-        ret = Http_ResGetFirmware( pgc, http_socketid );
+        ret = Http_ResGetFirmware( pgc,http_socketid );
         close(http_socketid);
         return ret;
     }
@@ -48,12 +48,10 @@ int32 GAgent_MCUOTAByUrl( pgcontext pgc,int8 *downloadUrl )
 uint32 GAgent_ReqServerTime(pgcontext pgc)
 {
     uint32 ret; 
-    uint8 *pCloudConfiRxbuf;
-    pCloudConfiRxbuf = pgc->rtinfo.Rxbuf->phead;
 
     if((pgc->rtinfo.GAgentStatus&WIFI_STATION_CONNECTED) !=  WIFI_STATION_CONNECTED)
     {
-        return RET_FAILED;
+        return (uint32)RET_FAILED;
     }
     
     ret = Cloud_ReqProvision( pgc );
@@ -61,9 +59,9 @@ uint32 GAgent_ReqServerTime(pgcontext pgc)
     if(0 != ret)
     {   
         GAgent_Printf(GAGENT_WARNING,"Provision fail!\n");
-        return RET_FAILED;
+        return (uint32)RET_FAILED;
     }
-    return RET_SUCCESS;
+    return (uint32)RET_SUCCESS;
 }
 uint32 GAgent_Get_Gserver_Time( uint32 *clock, uint8 *Http_recevieBuf, int32 respondCode )
 {
@@ -74,11 +72,11 @@ uint32 GAgent_Get_Gserver_Time( uint32 *clock, uint8 *Http_recevieBuf, int32 res
     
     if( 200 != respondCode )
     {        
-        return RET_FAILED;   
+        return (uint32)RET_FAILED;   
     }   
     p_start = strstr((char *)Http_recevieBuf, "server_ts=");
     if( p_start==NULL ) 
-        return RET_FAILED;   
+        return (uint32)RET_FAILED;   
     p_start = p_start+strlen("server_ts=");
     p_end = strstr( p_start,"&" ); 
     if( p_end == NULL )
@@ -88,7 +86,7 @@ uint32 GAgent_Get_Gserver_Time( uint32 *clock, uint8 *Http_recevieBuf, int32 res
     memcpy(stime,p_start,( p_end-p_start));
     time = atoi(stime);
     *clock = time;
-    return RET_SUCCESS;
+    return (uint32)RET_SUCCESS;
 }
 /****************************************************************
         FunctionName    :   GAgent_Cloud_SendData
@@ -189,7 +187,7 @@ uint32 Cloud_ReqRegister( pgcontext pgc )
     
     if( socket<=0 )
     {
-        return RET_FAILED;
+        return (uint32)RET_FAILED;
     }
     
     ret = Http_POST( socket, HTTP_SERVER,pConfigData->wifipasscode,(char *)pGlobalVar->minfo.szmac,
@@ -197,17 +195,17 @@ uint32 Cloud_ReqRegister( pgcontext pgc )
     
     if( RET_SUCCESS!=ret )
     {
-        return RET_FAILED;
+        return (uint32)RET_FAILED;
     }
     else
     {
-        return RET_SUCCESS;
+        return (uint32)RET_SUCCESS;
     }
 }
 /* 
     will get the device id.
 */
-int8 Cloud_ResRegister( uint8 *cloudConfiRxbuf,int32 buflen,int8 *pDID,int32 respondCode )
+int32 Cloud_ResRegister( uint8 *cloudConfiRxbuf,int32 buflen,int8 *pDID,int32 respondCode )
 {
     int32 ret=0;
     
@@ -235,7 +233,7 @@ uint32 Cloud_ReqGetSoftver( pgcontext pgc,enum OTATYPE_T type )
     socket = pGlobalVar->rtinfo.waninfo.http_socketid;
     
     if( socket<=0 )
-        return RET_FAILED;
+        return (uint32)RET_FAILED;
     
     GAgent_Printf(GAGENT_DEBUG, "http socket connect OK with:%d", socket);
     switch( type )
@@ -250,11 +248,10 @@ uint32 Cloud_ReqGetSoftver( pgcontext pgc,enum OTATYPE_T type )
             break;
         default:
             GAgent_Printf( GAGENT_WARNING,"GAgent OTA type is invalid! ");
-            return RET_FAILED;
-            break;
+            return (uint32)RET_FAILED;
     }
     CheckFirmwareUpgrade( HTTP_SERVER,pConfigData->DID,type,pConfigData->wifipasscode,hver,sver,socket );                  
-    return RET_SUCCESS;
+    return (uint32)RET_SUCCESS;
 }
 
 /****************************************************************
@@ -267,7 +264,7 @@ uint32 Cloud_ReqGetSoftver( pgcontext pgc,enum OTATYPE_T type )
 *       reutn           :   0 success other error.
 *       Add by Alex.lin   --2015-03-03
 ****************************************************************/
-int8 Cloud_ResGetSoftver( int8 *downloadurl, int8 *fwver, uint8 *cloudConfiRxbuf,int32 respondCode )
+int32 Cloud_ResGetSoftver( int8 *downloadurl, int8 *fwver, uint8 *cloudConfiRxbuf,int32 respondCode )
 {
     int32 ret=0;
     
@@ -301,7 +298,7 @@ uint32 Cloud_ReqProvision( pgcontext pgc )
     pGlobalVar->rtinfo.waninfo.http_socketid = Cloud_InitSocket( pGlobalVar->rtinfo.waninfo.http_socketid,pConfigData->GServer_ip,80,0 );
     socket = pGlobalVar->rtinfo.waninfo.http_socketid;
     if( socket<=0 )
-        return RET_FAILED;
+        return (uint32)RET_FAILED;
     
     ret = Http_GET( HTTP_SERVER,pConfigData->DID,socket );
     return ret;
@@ -318,7 +315,7 @@ uint32 Cloud_ResProvision( int8 *szdomain,int32 *port,uint8 *cloudConfiRxbuf,int
 {
     int32 ret = 0;
     if( 200 != respondCode )
-        return RET_FAILED;
+        return (uint32)RET_FAILED;
     ret = Http_getdomain_port( cloudConfiRxbuf,szdomain,port );
     return ret;
 }
@@ -345,9 +342,9 @@ uint32 Cloud_isNeedOTA( pgcontext pgc, int type, int8 *sFV )
                 return RET_SUCCESS;
             break;
         default:
-            return RET_FAILED;
+            return (uint32)RET_FAILED;
     }
-    return RET_FAILED;   
+    return (uint32)RET_FAILED;   
 }
 /****************************************************************
         Function    :   Cloud_ReqConnect
@@ -392,7 +389,7 @@ uint32 Cloud_ReqConnect( pgcontext pgc,const int8 *username,const int8 *password
     if( socket<=0 )
     {
         GAgent_Printf(GAGENT_WARNING,"m2m socket :%d",socket);
-        return RET_FAILED;
+        return (uint32)RET_FAILED;
     }
     GAgent_Printf(GAGENT_DEBUG,"Cloud_InitSocket OK!");
     
@@ -410,7 +407,7 @@ uint32 Cloud_ReqConnect( pgcontext pgc,const int8 *username,const int8 *password
 uint32 Cloud_ResConnect( uint8* buf )
 {
     if(NULL == buf)
-        return RET_FAILED;
+        return (uint32)RET_FAILED;
 
     if( buf[3] == 0x00 )
     {
@@ -422,7 +419,7 @@ uint32 Cloud_ResConnect( uint8* buf )
         {
             GAgent_Printf( GAGENT_ERROR,"%s %s %d",__FILE__,__FUNCTION__,__LINE__ );
             GAgent_Printf( GAGENT_ERROR,"MQTT Connect res  fail ret =%d!!",buf[3] );
-            return RET_FAILED;
+            return (uint32)RET_FAILED;
         }
     }
     GAgent_Printf( GAGENT_ERROR,"res connect fail with %d ",buf[3] );
@@ -447,12 +444,12 @@ uint32 Cloud_ResSubTopic( const uint8* buf,int8 msgsubId )
 {
     uint16 recmsgId=0;
      if(NULL == buf)
-        return RET_FAILED;
+        return (uint32)RET_FAILED;
     recmsgId = mqtt_parse_msg_id( buf );
     if( recmsgId!=msgsubId )
-        return RET_FAILED;
+        return (uint32)RET_FAILED;
     else 
-        return RET_SUCCESS;
+        return (uint32)RET_SUCCESS;
 }
 
 uint32 Cloud_Disconnect()
@@ -474,7 +471,7 @@ uint32 Cloud_ReqDisable( pgcontext pgc )
     socket = pGlobalVar->rtinfo.waninfo.http_socketid;
 
     if( socket<=0 )
-        return RET_FAILED;
+        return (uint32)RET_FAILED;
 
     ret = Http_Delete( socket,HTTP_SERVER,pConfigData->old_did,pConfigData->old_wifipasscode );
     return 0;
@@ -500,7 +497,7 @@ uint32 Cloud_JD_Post_ReqFeed_Key( pgcontext pgc )
     socket = pGlobalVar->rtinfo.waninfo.http_socketid;
     
     if( socket<=0 )
-        return RET_FAILED;
+        return (uint32)RET_FAILED;
     
     ret = Http_JD_Post_Feed_Key_req( socket,pConfigData->cloud3info.jdinfo.feed_id,pConfigData->cloud3info.jdinfo.access_key,
                                      pConfigData->DID,HTTP_SERVER );
@@ -891,7 +888,7 @@ uint32 Cloud_ConfigDataHandle( pgcontext pgc /*int32 cloudstatus*/ )
                                 *(uint32 *)(pgc->rtinfo.Rxbuf->ppayload) = htonl(pgc->rtinfo.filelen);
                                 *(uint16 *)(pgc->rtinfo.Rxbuf->ppayload+4) = htons(32);
                                 for(i=0; i<32; i++)
-                                    pgc->rtinfo.Rxbuf->ppayload[4+2+i] = pgc->rtinfo.MD5[i];
+                                    pgc->rtinfo.Rxbuf->ppayload[4+2+i] = pgc->mcu.MD5[i];
                                 pgc->rtinfo.Rxbuf->pend = (pgc->rtinfo.Rxbuf->ppayload) + 4 + 2 + 32;
                                 GAgent_LocalDataWriteP0( pgc,pgc->rtinfo.local.uart_fd, pgc->rtinfo.Rxbuf, MCU_NEED_UPGRADE );
                                 disableDIDflag=1;
@@ -1057,7 +1054,7 @@ uint32 Cloud_ConfigDataHandle( pgcontext pgc /*int32 cloudstatus*/ )
 int32 Cloud_M2MDataHandle(  pgcontext pgc,ppacket pbuf /*, ppacket poutBuf*/, uint32 buflen)
 {
     uint32 dTime=0,ret=0,dataLen=0;
-    uint32 packetLen=0;
+    int32 packetLen=0;
     pgcontext pGlobalVar=NULL;
     pgconfig pConfigData=NULL;
     int8 *username=NULL;
@@ -1118,7 +1115,7 @@ int32 Cloud_M2MDataHandle(  pgcontext pgc,ppacket pbuf /*, ppacket poutBuf*/, ui
               GAgent_DevCheckWifiStatus( WIFI_CLOUD_CONNECTED,0 );
               GAgent_Printf(GAGENT_DEBUG,"MQTT fd was closed!!");
               GAgent_Printf(GAGENT_DEBUG,"GAgent go to MQTT_STATUS_START");
-              return -1;
+              return RET_FAILED;
           }
           else if( packetLen>0 )
           {
@@ -1128,7 +1125,7 @@ int32 Cloud_M2MDataHandle(  pgcontext pgc,ppacket pbuf /*, ppacket poutBuf*/, ui
           }
           else
           {
-            return -1;
+            return RET_FAILED;
           }
         }
 
@@ -1211,13 +1208,10 @@ int32 Cloud_M2MDataHandle(  pgcontext pgc,ppacket pbuf /*, ppacket poutBuf*/, ui
                      }
                      else
                      {
-                        uint16 newStatus=0;
                         GAgent_Printf(GAGENT_CRITICAL,"GAgent Cloud Working...");
                         GAgent_SetCloudServerStatus( pgc,MQTT_STATUS_RUNNING );
-                        newStatus = pgc->rtinfo.GAgentStatus;
-                        //newStatus |=WIFI_CLOUD_CONNECTED;
                         GAgent_Printf( GAGENT_INFO,"file:%s function:%s line:%d ",__FILE__,__FUNCTION__,__LINE__ );
-                        newStatus = GAgent_DevCheckWifiStatus( WIFI_CLOUD_CONNECTED,1 );
+                        GAgent_DevCheckWifiStatus( WIFI_CLOUD_CONNECTED,1 );
                         //GAgent_SetWiFiStatus( pgc,WIFI_CLOUD_CONNECTED,1 );
                      }
                       break;
@@ -1258,7 +1252,7 @@ int32 Cloud_M2MDataHandle(  pgcontext pgc,ppacket pbuf /*, ppacket poutBuf*/, ui
 
 int32 GAgent_Cloud_GetPacket( pgcontext pgc,ppacket pRxbuf, int32 buflen)
 {
-    int32 Mret=0,Hret=0;
+    int32 Mret=0;
     uint16 GAgentstatus = 0;
     ppacket pbuf = pRxbuf;
     GAgentstatus = pgc->rtinfo.GAgentStatus;
@@ -1266,7 +1260,7 @@ int32 GAgent_Cloud_GetPacket( pgcontext pgc,ppacket pRxbuf, int32 buflen)
     if( (GAgentstatus&WIFI_STATION_CONNECTED) != WIFI_STATION_CONNECTED)
         return -1 ;
 
-    Hret = Cloud_ConfigDataHandle( pgc );
+    Cloud_ConfigDataHandle( pgc );
     Mret = Cloud_M2MDataHandle( pgc,pbuf, buflen );
     return Mret;
 }

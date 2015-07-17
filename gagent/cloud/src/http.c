@@ -539,9 +539,8 @@ int32 Http_GetHost( int8 *downloadurl,int8 **host,int8 **url )
 {
    int8 *p_start = NULL;
    int8 *p_end =NULL; 
-   int32 len;
    int8 hostlen;
-   len = strlen(downloadurl);
+
    p_start = strstr( downloadurl,"http://" );
    if(p_start==NULL) 
        return RET_FAILED;
@@ -645,7 +644,6 @@ int32 Http_ReqGetFirmware( int8 *url,int8 *host,int32 socketid )
     static int8 *getBuf = NULL;
     int32 totalLen=0;
     int32 ret=0;
-        
     getBuf = (int8*)malloc( 200 );
     if(getBuf == NULL)
     {
@@ -668,6 +666,7 @@ int32 Http_ReqGetFirmware( int8 *url,int8 *host,int32 socketid )
               "Content-Type: application/text",kCRLFLineEnding);
     totalLen =strlen( getBuf );
     ret = send( socketid, getBuf,totalLen,0 );
+    GAgent_Printf( GAGENT_DEBUG,"Req mcu OTA len:%d send ret %d:\n%s",totalLen,ret ,getBuf );
     free(getBuf); 
     getBuf = NULL;
 

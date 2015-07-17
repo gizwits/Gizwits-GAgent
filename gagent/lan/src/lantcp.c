@@ -67,12 +67,14 @@ int32 Lan_TcpServerHandler(pgcontext pgc)
     {
         /* if nonblock, can be done in accept progress */
         newfd = Socket_accept(pgc->ls.tcpServerFd, &addr, (socklen_t *)&addrLen);
-        if(newfd > 0)
+        if( newfd<=0 )
         {
-            GAgent_Printf(GAGENT_DEBUG, "detected new client as %d", newfd);
-            ret = Lan_AddTcpNewClient(pgc, newfd, &addr);
+            GAgent_Printf( GAGENT_ERROR,"Need to Restart Lan_TcpServer ");
+            Lan_CreateTCPServer(&(pgc->ls.tcpServerFd), GAGENT_TCP_SERVER_PORT);
+            return RET_FAILED;
         }
-
+        GAgent_Printf(GAGENT_DEBUG, "detected new client as %d", newfd);
+        ret = Lan_AddTcpNewClient(pgc, newfd, &addr);
     }
     return ret;
 }
@@ -153,11 +155,8 @@ static uint32 Lan_checkAuthorization( pgcontext pgc,  int clientIndex)
 ****************************************************************/
 static void Lan_handleLogin( pgcontext pgc, ppacket src, int clientIndex)
 {
-    int32 fd;
     uint8 isLogin;
     uint8 *pbuf;
-
-    fd = pgc->ls.tcpClient[clientIndex].fd;
 
     /* verify passcode */
     if( !memcmp((src->phead + 10), pgc->gc.wifipasscode, strlen( pgc->gc.wifipasscode)) )
@@ -246,8 +245,8 @@ static void Lan_handlePasscode( pgcontext pgc, ppacket src, int clientIndex)
     pbuf[7] = 0x07;
 
     /* passcode len */ 
-    passcodeLen = htons(strlen( pgc->gc.wifipasscode ));
-    *(uint16 *)(pbuf + 8) =  passcodeLen;
+    passcodeLen = strlen( pgc->gc.wifipasscode );
+    *(uint16 *)(pbuf + 8) =  htons(passcodeLen);
 
     /* passcode */
     for(i=0;i < passcodeLen;i++)
@@ -500,7 +499,7 @@ void Local_Ack2TcpClient(pgcontext pgc, uint32 channel)
         *(uint32 *)tmpBuf = htonl(GAGENT_PROTOCOL_VERSION);
         tmpBuf[4] = sizeof(flag) + sizeof(cmdWord);
         //flag
-        tmpBuf[5] = 0x00;
+        tmpBuf[5] = flag;
         //cmdword
         *(uint16 *)(tmpBuf + 6) = htons(cmdWord);
         
@@ -518,7 +517,6 @@ int32 Lan_dispatchTCPData(pgcontext pgc, ppacket prxBuf,/* ppacket ptxBuf,*/ int
     int ret = 0;
     uint16 cmd;
     int32 bytesOfLen;
-    int len;
     int32 sn;
 
     bytesOfLen = mqtt_num_rem_len_bytes(prxBuf->phead + 3);
@@ -526,7 +524,6 @@ int32 Lan_dispatchTCPData(pgcontext pgc, ppacket prxBuf,/* ppacket ptxBuf,*/ int
     {
          return 0;
     }
-    len = mqtt_parse_rem_len(prxBuf->phead + 3);
 
     cmd = *(uint16 *)(prxBuf->phead + LAN_PROTOCOL_HEAD_LEN + LAN_PROTOCOL_FLAG_LEN
                         + bytesOfLen);

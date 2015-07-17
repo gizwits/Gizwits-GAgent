@@ -157,12 +157,12 @@ uint32 Http_ResGetFirmware( pgcontext pgc,int32 socketid )
     }
     headlen = Http_HeadLen( httpReceiveBuf );
     pgc->rtinfo.filelen = Http_BodyLen( httpReceiveBuf );
-    pgc->rtinfo.MD5 = (char *)malloc(32+1);
-    if( pgc->rtinfo.MD5 == NULL )
-    {
-        return RET_FAILED;
-    }
-    Http_GetMD5( httpReceiveBuf,MD5,pgc->rtinfo.MD5);
+    //pgc->rtinfo.MD5 = (char *)malloc(32+1);
+    // if( pgc->rtinfo.MD5 == NULL )
+    // {
+    //     return RET_FAILED;
+    // }
+    Http_GetMD5( httpReceiveBuf,MD5,pgc->mcu.MD5 );
     Http_GetSV( httpReceiveBuf,(char *)pgc->mcu.soft_ver);
   
     offset = 0;

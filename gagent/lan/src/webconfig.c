@@ -56,7 +56,6 @@ int32 handleWebConfig( pgcontext pgc,int32 fd)
     }
     else
     {
-        uint16 TempWiFiStatus = 0;
         //GET /web_config.cgi?fname=chensf&lname=pinelinda HTTP/1.1
         index_ssid = strstr(buf_head, "ssid=");
         index_pass = strstr(buf_head, "pass=");
@@ -106,7 +105,7 @@ int32 handleWebConfig( pgcontext pgc,int32 fd)
             GAgent_DRVWiFi_APModeStop( pgc );
             GAgent_Printf( GAGENT_INFO,"webconfig ssid:%s key:%s",pConfigData->wifi_ssid,pConfigData->wifi_key );
             GAgent_Printf( GAGENT_DEBUG,"file:%s function:%s line:%d ",__FILE__,__FUNCTION__,__LINE__ );
-            TempWiFiStatus = GAgent_DevCheckWifiStatus( WIFI_MODE_ONBOARDING,0 );
+            GAgent_DevCheckWifiStatus( WIFI_MODE_ONBOARDING,0 );
         }
     }
     free(buf_head);

@@ -22,7 +22,7 @@ typedef struct
 void GAgent_MoveOneByte( uint8 *pData,int32 dataLen,uint8 flag );
 uint32 Local_SendData( int32 fd,uint8 *pData, int32 bufferMaxLen );
 int32 Local_DataAdapter( /*uint8 cmd,*/ uint8 *pData,int32 dataLen /*,uint8 **pdest*/ );
-void Local_HalInit();
+void Local_HalInit( pgcontext pgc );
 void Local_GetInfo( pgcontext pgc );
 void Local_Ack2MCU( int32 fd,uint8 sn,uint8 cmd );
 void Local_Ack2MCUwithP0( ppacket pbuf,int32 fd,uint8 sn,uint8 cmd );

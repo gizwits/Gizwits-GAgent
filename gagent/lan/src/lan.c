@@ -282,7 +282,6 @@ void Lan_sendTcpData(pgcontext pgc, int32 fd, uint16 cmd, int32 sn, ppacket pTxB
         default:
             /* not support ,return directly */
             return ;
-            break;
     }
 
     if(fd >= 0)
@@ -375,17 +374,11 @@ void DestroyUDPBroadCastServer(pgcontext pgc)
     {
         return;
     }
-    /*
-    pgc->ls.broResourceNum--;
-    if(pgc->ls.broResourceNum <= 0)
-    {*/
-        if(INVALID_SOCKET != pgc->ls.udpBroadCastServerFd)
-        {
-            close(pgc->ls.udpBroadCastServerFd);
-            pgc->ls.udpBroadCastServerFd = INVALID_SOCKET;
-        }
-//      pgc->ls.broResourceNum = 0;
-//   }
+    if(INVALID_SOCKET != pgc->ls.udpBroadCastServerFd)
+    {
+        close( pgc->ls.udpBroadCastServerFd );
+        pgc->ls.udpBroadCastServerFd = INVALID_SOCKET;
+    }
 }
 /****************************************************************
         FunctionName        :   GAgent_LanTick.
@@ -452,11 +445,15 @@ void GAgent_LanTick( pgcontext pgc,uint32 dTime_s )
             pgc->ls.onboardingBroadCastTime--;
             resetPacket(pgc->rtinfo.Rxbuf);
             ptxBuf = pgc->rtinfo.Rxbuf->phead;
-
+            GAgent_Printf( GAGENT_INFO,"onboardingBroadCastTime:%d",pgc->ls.onboardingBroadCastTime );
             if(pgc->rtinfo.firstStartUp)
             {
                 GAgent_Printf( GAGENT_INFO,"UDP BC firstStartUp...");
                 send_broadCastPacket(pgc,ptxBuf,GAGENT_LAN_CMD_STARTUP_BROADCAST);
+                if( 0==(pgc->ls.onboardingBroadCastTime) )
+                {
+                    GAgent_Printf( GAGENT_INFO,"hello ..." );
+                }
             }
             if((GAgentConStatus & XPG_CFG_FLAG_CONFIG) == XPG_CFG_FLAG_CONFIG)
             {
@@ -464,7 +461,7 @@ void GAgent_LanTick( pgcontext pgc,uint32 dTime_s )
                 send_broadCastPacket(pgc,ptxBuf,GAGENT_LAN_CMD_AIR_BROADCAST);
             }
             
-            if( 0==pgc->ls.onboardingBroadCastTime )
+            if( 0==(pgc->ls.onboardingBroadCastTime) )
             {
                 pgc->rtinfo.firstStartUp = 0;
                 GAgentConStatus &= (~XPG_CFG_FLAG_CONFIG);
@@ -494,30 +491,28 @@ uint32 GAgent_Lan_Handle(pgcontext pgc, ppacket prxBuf,int32 len)
     int i =0;
     int fd =0;
     int ret =0;
-    uint16 GAgentStatus=0;
-    GAgentStatus = pgc->rtinfo.GAgentStatus;
+    
+    GAgent_DoTcpWebConfig( pgc );
+    Lan_udpDataHandle(pgc, prxBuf, len);
+    Lan_TcpServerHandler(pgc);
+    GAgent3rdLan_Handle( pgc );
+    for(i = 0;i < LAN_TCPCLIENT_MAX; i++)
     {
-        GAgent_DoTcpWebConfig( pgc );
-        Lan_udpDataHandle(pgc, prxBuf, len);
-        Lan_TcpServerHandler(pgc);
-        GAgent3rdLan_Handle( pgc );
-        for(i = 0;i < LAN_TCPCLIENT_MAX; i++)
+        fd = pgc->ls.tcpClient[i].fd;
+        if(fd <= 0)
+            continue;
+        if(FD_ISSET(fd, &(pgc->rtinfo.readfd)))
         {
-            fd = pgc->ls.tcpClient[i].fd;
-            if(fd <= 0)
-                continue;
-            if(FD_ISSET(fd, &(pgc->rtinfo.readfd)))
+            ret = Lan_tcpClientDataHandle(pgc, i, prxBuf, /* ptxBuf,*/ len);
+            if(ret > 0)
             {
-                ret = Lan_tcpClientDataHandle(pgc, i, prxBuf, /* ptxBuf,*/ len);
-                if(ret > 0)
-                {
-                    dealPacket(pgc, prxBuf);
-                    Lan_ClearClientAttrs(pgc, &pgc->ls.srcAttrs);
-                    clearChannelAttrs(pgc);
-                }
+                dealPacket(pgc, prxBuf);
+                Lan_ClearClientAttrs(pgc, &pgc->ls.srcAttrs);
+                clearChannelAttrs(pgc);
             }
         }
     }
+    
     return 0;
 }
 
@@ -528,15 +523,12 @@ uint32 GAgent_Lan_Handle(pgcontext pgc, ppacket prxBuf,int32 len)
 ****************************************************************/
 void GAgent_LANInit(pgcontext pgc)
 {
-    uint16 newStatus=0;
     LAN_tcpClientInit(pgc);
     LAN_InitSocket(pgc);  
     GAgent_SetWiFiStatus( pgc,WIFI_MODE_BINDING,1 );  //enable Bind
     pgc->ls.broResourceNum = 0;//enable public broadcast resource
     GAgent_SetWiFiStatus( pgc,WIFI_CLIENT_ON,0 );
     
-    newStatus = pgc->rtinfo.GAgentStatus;
-    //newStatus |=WIFI_CLOUD_CONNECTED;
     GAgent_Printf( GAGENT_DEBUG,"file:%s function:%s line:%d ",__FILE__,__FUNCTION__,__LINE__ );
 }
 

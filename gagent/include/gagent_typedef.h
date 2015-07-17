@@ -171,6 +171,7 @@ typedef struct _XPG_MCU
     uint8   soft_ver[MCU_SOFTVER_LEN+1];
     uint8   product_key[PK_LEN+1];
     uint8   mcu_attr[MCU_MCUATTR_LEN];
+    int8    MD5[32+1];
     localTxbufInfo TxbufInfo;   
 }XPG_MCU;
 
@@ -236,13 +237,13 @@ typedef struct runtimeinfo_t
 
     uint16 GAgentStatus;/* gagentStatus */
     uint16 lastGAgentStatus;
-   
+    int16 loglevel;
+    
     int8 status_ip_flag; /* when got the ip in station mode,value is 1. */
     uint8 logSwitch[2];
-    int8 loglevel;
+    
     uint8 scanWifiFlag;
     int8 firstStartUp;
-    int8 *MD5;
 
     wifistatus devWifiStatus;
     

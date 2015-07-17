@@ -76,49 +76,52 @@ uint16 GAgent_DevCheckWifiStatus( uint16 wifistatus,int8 flag  )
 }
 void GAgentSetLedStatus( uint16 gagentWiFiStatus )
 {
-    static uint8  Router_Connect_flag = 0;
     static uint32 Router_Connect_count = 0;
-    static uint8  Airlink_flag = 0;
-    static uint32 Airlink_count = 0;
     static uint8  Cloud_Connect_flag = 0;
     static uint32 Cloud_Connect_count = 0;
-
-    switch( gagentWiFiStatus&0x35 )
+    static uint32 Station_Mode_count = 0;
+    static uint8  led_flag=0;
+    if( (gagentWiFiStatus&0x37)!= (WIFI_CLOUD_CONNECTED|WIFI_STATION_CONNECTED|WIFI_MODE_STATION) )
     {
-        case WIFI_MODE_AP: 
+        GAgent_Printf( GAGENT_INFO,"gagentWiFiStatus&0x37:%02X",(gagentWiFiStatus&0x37) );
+        Cloud_Connect_count=0;
+    }
+    switch( gagentWiFiStatus&0x37 )
+    {
+        case WIFI_MODE_AP:
+        case (WIFI_MODE_AP|WIFI_MODE_ONBOARDING):
+            GAgent_Printf( GAGENT_INFO,"WIFI_MODE_AP");
             GAgent_DevLED_Red( 1 );
             GAgent_DevLED_Green( 0 ); 
             break;
-        case WIFI_MODE_ONBOARDING:
-            if( (gagentWiFiStatus&WIFI_MODE_AP) == 0 )
-            {
-                Airlink_count++;
-                if( Airlink_count%4 == 0)
-                {
-                    Airlink_flag = !Airlink_flag;
-                    Airlink_count = 0;
-                }
-                GAgent_DevLED_Red( 0 );
-                GAgent_DevLED_Green( Airlink_flag ); 
-            }
-            else
-            {
-                GAgent_DevLED_Red( 1 );
-                GAgent_DevLED_Green( 0 ); 
-            }
-            break;
-        case WIFI_STATION_CONNECTED:          
+        /* STA模式+没连上路由器+没连接上云端 */
+        case WIFI_MODE_STATION:
+        GAgent_Printf( GAGENT_INFO,"WIFI_MODE_STATION");
+            Station_Mode_count++;
             GAgent_DevLED_Red( 1 );
-            GAgent_DevLED_Green( 1 );      
+            if( Station_Mode_count%4==0 )
+            {
+                GAgent_DevLED_Green( led_flag );
+                led_flag =!led_flag;
+            }
             break;
-        case ( WIFI_CLOUD_CONNECTED | WIFI_STATION_CONNECTED ):
+        /* STA模式+连上路由器+没连接上云端 */
+        case (WIFI_STATION_CONNECTED|WIFI_MODE_STATION):          
+            GAgent_Printf( GAGENT_INFO,"WIFI_STATION_CONNECTED|WIFI_MODE_STATION");
+            GAgent_DevLED_Red( 1 );
+            GAgent_DevLED_Green( 1 );
+            break;
+        /* STA模式+连上路由器+连接上云端 */
+        case ( WIFI_CLOUD_CONNECTED|WIFI_STATION_CONNECTED|WIFI_MODE_STATION ):
             if( Cloud_Connect_count < ONE_MINUTE*10 )
             {
+                GAgent_Printf( GAGENT_INFO,"WIFI_CLOUD_CONNECTED|WIFI_STATION_CONNECTED|WIFI_MODE_STATION");
                 Cloud_Connect_count++;
                 if( Cloud_Connect_count%4 == 0)
                 {
                     Cloud_Connect_flag = !Cloud_Connect_flag;
                 }
+                GAgent_Printf( GAGENT_INFO,"Cloud_Connect_count = %d,Cloud_Connect_flag=%d",Cloud_Connect_count,Cloud_Connect_flag);    
                 GAgent_DevLED_Red( Cloud_Connect_flag );
                 GAgent_DevLED_Green( !Cloud_Connect_flag );
             }
@@ -128,18 +131,14 @@ void GAgentSetLedStatus( uint16 gagentWiFiStatus )
                 GAgent_DevLED_Green( 0 );  
             }
             break;
-        default: //don't connect router           
+            /* 无状态两灯同时闪 */
+        default: 
+            GAgent_Printf( GAGENT_INFO," unkonw GAgent Status ");
             Router_Connect_count++;            
-            if( Router_Connect_count%4 == 0)
-            {
-                Router_Connect_flag = !Router_Connect_flag;
-                Router_Connect_count = 0;
-            }
-            GAgent_DevLED_Red( 1 );
-            GAgent_DevLED_Green( Router_Connect_flag );
+            GAgent_DevLED_Red( (Router_Connect_count%2) );
+            GAgent_DevLED_Green( (Router_Connect_count%2) );
             break;
     }
-   
 }
 
 /****************************************************************
@@ -229,6 +228,7 @@ void  GAgent_WiFiEventTick( pgcontext pgc,uint32 dTime_s )
             GAgent_SetCloudConfigStatus( pgc,CLOUD_INIT );
         }
         GAgent_DevCheckWifiStatus( WIFI_CLOUD_CONNECTED,0 );
+        gagentWiFiStatus = ( (pgc->rtinfo.GAgentStatus)&(LOCAL_GAGENTSTATUS_MASK) ) ;
         //GAgent_SetWiFiStatus( pgc,WIFI_CLOUD_CONNECTED,0 );
     }
     if( (gagentWiFiStatus&WIFI_MODE_STATION) != ( newStatus&WIFI_MODE_STATION) )
@@ -256,6 +256,7 @@ void  GAgent_WiFiEventTick( pgcontext pgc,uint32 dTime_s )
         }
         pgc->rtinfo.waninfo.wanclient_num=0;
         pgc->ls.tcpClientNums=0;
+        gagentWiFiStatus = ( (pgc->rtinfo.GAgentStatus)&(LOCAL_GAGENTSTATUS_MASK) ) ;
     }
     if( (gagentWiFiStatus&WIFI_MODE_ONBOARDING) != ( newStatus&WIFI_MODE_ONBOARDING) )
     {
@@ -267,7 +268,9 @@ void  GAgent_WiFiEventTick( pgcontext pgc,uint32 dTime_s )
             GAgent_DevSaveConfigData( &(pgc->gc) );
             GAgent_Printf( GAGENT_INFO,"WIFI_MODE_ONBOARDING UP." );
             
-            if( (newStatus&WIFI_STATION_CONNECTED) == WIFI_STATION_CONNECTED )
+            if( (newStatus&WIFI_STATION_CONNECTED) == WIFI_STATION_CONNECTED
+                   || (newStatus&WIFI_MODE_STATION) == WIFI_MODE_STATION
+                )
             {
                 tempWiFiStatus = GAgent_DRVWiFi_StationDisconnect();
             }
@@ -284,16 +287,22 @@ void  GAgent_WiFiEventTick( pgcontext pgc,uint32 dTime_s )
             pgc->gc.flag &=~ XPG_CFG_FLAG_CONFIG_AP;
             GAgent_DevSaveConfigData( &(pgc->gc) );
             GAgent_Printf( GAGENT_INFO,"WIFI_MODE_ONBOARDING DOWN." );
-            if( gagentOnboardingTime>0 )
-            { /* 在规定时间内接收到配置包 */
+            if( gagentOnboardingTime <= 0 )
+            { 
+                GAgent_Printf( GAGENT_INFO,"WIFI_MODE_ONBOARDING Time out ...");
+            }
+            else
+            {
+              /* 在规定时间内接收到配置包 */
               GAgent_Printf( GAGENT_INFO,"Receive OnBoarding data.");
               pgc->ls.onboardingBroadCastTime = SEND_UDP_DATA_TIMES;
               pgc->gc.flag |=XPG_CFG_FLAG_CONFIG;
               GAgent_DevSaveConfigData( &(pgc->gc) );
+              GAgent_WiFiInit( pgc );
             }
             GAgent_SetWiFiStatus( pgc,WIFI_MODE_ONBOARDING,0 );
             gagentOnboardingTime = 0;
-            GAgent_WiFiInit( pgc );
+            
         }
         if( pgc->rtinfo.waninfo.CloudStatus == CLOUD_CONFIG_OK )
         {
@@ -305,8 +314,8 @@ void  GAgent_WiFiEventTick( pgcontext pgc,uint32 dTime_s )
         }
         pgc->rtinfo.waninfo.wanclient_num=0;
         pgc->ls.tcpClientNums=0;
-        //GAgent_SetWiFiStatus( pgc,WIFI_CLOUD_CONNECTED,0 );
         GAgent_DevCheckWifiStatus( WIFI_CLOUD_CONNECTED,0 );
+        gagentWiFiStatus = ( (pgc->rtinfo.GAgentStatus)&(LOCAL_GAGENTSTATUS_MASK) ) ;
     }
     if( (gagentWiFiStatus&WIFI_STATION_CONNECTED) != ( newStatus & WIFI_STATION_CONNECTED) )
     {
@@ -334,11 +343,12 @@ void  GAgent_WiFiEventTick( pgcontext pgc,uint32 dTime_s )
             GAgent_SetWiFiStatus( pgc,WIFI_STATION_CONNECTED,0 );
             GAgent_SetWiFiStatus( pgc,WIFI_CLIENT_ON,0 );
             GAgent_SetCloudServerStatus( pgc,MQTT_STATUS_START );
-
+ 
             GAgent_DevCheckWifiStatus( WIFI_CLOUD_CONNECTED,0 );
         }
         pgc->rtinfo.waninfo.wanclient_num=0;
         pgc->ls.tcpClientNums=0;
+        gagentWiFiStatus = ( (pgc->rtinfo.GAgentStatus)&(LOCAL_GAGENTSTATUS_MASK) ) ;
     }
     if( (gagentWiFiStatus&WIFI_CLOUD_CONNECTED) != ( newStatus & WIFI_CLOUD_CONNECTED) )
     {
@@ -357,6 +367,7 @@ void  GAgent_WiFiEventTick( pgcontext pgc,uint32 dTime_s )
             GAgent_SetWiFiStatus( pgc,WIFI_CLOUD_CONNECTED,0 );
             
         }
+        gagentWiFiStatus = ( (pgc->rtinfo.GAgentStatus)&(LOCAL_GAGENTSTATUS_MASK) ) ;
     }
     if( gagentWiFiStatus&WIFI_MODE_TEST )//test mode
     {
@@ -416,6 +427,7 @@ void  GAgent_WiFiEventTick( pgcontext pgc,uint32 dTime_s )
                 tempWiFiStatus |= GAgent_DRVWiFi_StationCustomModeStart( GAGENT_TEST_AP2,GAGENT_TEST_AP_PASS,pgc->rtinfo.GAgentStatus );
              }
         }
+        gagentWiFiStatus = ( (pgc->rtinfo.GAgentStatus)&(LOCAL_GAGENTSTATUS_MASK) ) ;
     }
     pgc->rtinfo.wifiLastScanTime+=dTime_s;
     if( gagentWiFiStatus&WIFI_STATION_CONNECTED )
@@ -439,6 +451,7 @@ void  GAgent_WiFiEventTick( pgcontext pgc,uint32 dTime_s )
             pgc->rtinfo.GAgentStatus = gagentWiFiStatus;
             GAgent_Printf( GAGENT_INFO,"SSID power:%d level:%d wifistatus:%04x",wifiRSSI,wifiLevel,gagentWiFiStatus );
         }
+        gagentWiFiStatus = ( (pgc->rtinfo.GAgentStatus)&(LOCAL_GAGENTSTATUS_MASK) ) ;
     }
     if( gagentWiFiStatus&WIFI_MODE_AP )
     {
@@ -480,12 +493,10 @@ void  GAgent_WiFiEventTick( pgcontext pgc,uint32 dTime_s )
                 }
             }
         }
+        gagentWiFiStatus = ( (pgc->rtinfo.GAgentStatus)&(LOCAL_GAGENTSTATUS_MASK) ) ;
     }
     if( (gagentWiFiStatus&WIFI_MODE_ONBOARDING)==WIFI_MODE_ONBOARDING )
     {
-        uint16 TempWiFiStatus = 0;
-        TempWiFiStatus = gagentWiFiStatus;
-
         if( gagentOnboardingTime>0 )
         {
             gagentOnboardingTime--;
@@ -495,23 +506,9 @@ void  GAgent_WiFiEventTick( pgcontext pgc,uint32 dTime_s )
             GAgent_DevCheckWifiStatus( WIFI_MODE_ONBOARDING,0 );
             GAgent_Printf( GAGENT_DEBUG,"file:%s function:%s line:%d ",__FILE__,__FUNCTION__,__LINE__ );
         }
+        gagentWiFiStatus = ( (pgc->rtinfo.GAgentStatus)&(LOCAL_GAGENTSTATUS_MASK) ) ;
     }
-    /*
-    uint16 temp=0;
-    gagentWiFiStatus = pgc->rtinfo.GAgentStatus;
-    //获取状态
-    GAgent_Printf( GAGENT_DEBUG,"file:%s function:%s line:%d ",__FILE__,__FUNCTION__,__LINE__ );
-    temp = GAgent_DevCheckWifiStatus( 0xFFFF );
-    temp = ( temp&0x13 );
-    gagentWiFiStatus = ( gagentWiFiStatus&0xFFEC );
-    gagentWiFiStatus = ( gagentWiFiStatus|temp );
-    */
-    //GAgent_Printf( GAGENT_INFO,"temp = %04X gagentWiFiStatus: %04X",temp,gagentWiFiStatus );
     GAgent_LocalSendGAgentstatus(pgc,dTime_s);
     GAgentSetLedStatus( gagentWiFiStatus );
-
-    //newStatus = gagentWiFiStatus;
-    //GAgent_Printf( GAGENT_DEBUG,"file:%s function:%s line:%d ",__FILE__,__FUNCTION__,__LINE__ );
-    //newStatus = GAgent_DevCheckWifiStatus( newStatus );
     return ;
 }

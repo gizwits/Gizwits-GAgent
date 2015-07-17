@@ -295,7 +295,6 @@ int32 GAgent_Local_RecAll(pgcontext pgc)
     int32 fd;
     int32 available_len =0;
     int32 read_count = 0;
-    uint32 offRec;
 
     fd = pgc->rtinfo.local.uart_fd;
     if(fd < 0)
@@ -308,7 +307,6 @@ int32 GAgent_Local_RecAll(pgcontext pgc)
         /* step 1.read data into loopbuf */
         available_len = get_available_buf_space( pos_current, pos_start );
         read_count = serial_read( fd, &hal_RxBuffer[pos_current & HAL_BUF_MASK],available_len );
-        offRec = pos_current;
         if(read_count <= 0)
         {
             return read_count;
