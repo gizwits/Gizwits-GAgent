@@ -302,7 +302,8 @@ int8 dealPacket( pgcontext pgc, ppacket pTxBuf )
     {
         GAgent_Printf( GAGENT_DEBUG,"packet Type : LOCAL_DATA_OUT ");
         pTxBuf->type = SetPacketType(pTxBuf->type, LOCAL_DATA_OUT, 0);
-        GAgent_LocalDataWriteP0( pgc,pgc->rtinfo.local.uart_fd, pTxBuf,MCU_CTRL_CMD );     
+        copyPacket(pTxBuf, pgc->rtinfo.Txbuf);
+        GAgent_LocalDataWriteP0( pgc,pgc->rtinfo.local.uart_fd, pgc->rtinfo.Txbuf,MCU_CTRL_CMD );     
         GAgent_Printf( GAGENT_DEBUG,"ReSetpacket Type : LOCAL_DATA_OUT ");     
     }
     if( ((pTxBuf->type)&(CLOUD_DATA_OUT)) == CLOUD_DATA_OUT )
@@ -322,6 +323,30 @@ int8 dealPacket( pgcontext pgc, ppacket pTxBuf )
     }
     GAgent_Printf( GAGENT_DEBUG,"OUT packet type : %04X\r\n",pTxBuf->type );
     return 0;
+}
+
+void copyPacket(ppacket psrcPacket, ppacket pdestPacket)
+{
+    if(NULL == psrcPacket || NULL == pdestPacket)
+    {
+        GAgent_Printf(GAGENT_WARNING,"func:%s,line:%d,buf is NULL!psrcPacket:0x%x, pdestPacket:0x%x",
+                    __FUNCTION__, __LINE__, psrcPacket, pdestPacket);
+
+        return ;
+    }
+
+    if(NULL == psrcPacket->allbuf || NULL == pdestPacket->allbuf)
+    {
+        GAgent_Printf(GAGENT_WARNING,"func:%s,line:%d,buf is NULL!psrcPacket->allbuf:0x%x,pdestPacket->allbuf:0x%x",
+                    __FUNCTION__, __LINE__,
+                    psrcPacket->allbuf,
+                    pdestPacket->allbuf);
+    }
+
+    pdestPacket->phead = pdestPacket->allbuf + (psrcPacket->phead - psrcPacket->allbuf);
+    pdestPacket->ppayload = pdestPacket->allbuf + (psrcPacket->ppayload - psrcPacket->allbuf);
+    pdestPacket->pend = pdestPacket->allbuf + (psrcPacket->pend - psrcPacket->allbuf);
+    memcpy(pdestPacket->phead, psrcPacket->phead, psrcPacket->pend - psrcPacket->phead);
 }
 
 void setChannelAttrs(pgcontext pgc, stCloudAttrs_t *cloudClient, stLanAttrs_t *lanClient, uint8 isBroadCast)

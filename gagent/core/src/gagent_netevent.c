@@ -11,6 +11,16 @@ void GAgent_WiFiInit( pgcontext pgc )
         GAgent_Printf( GAGENT_DEBUG," GAgent XPG_CFG_FLAG_CONFIG_AP." );
         GAgent_DevCheckWifiStatus( WIFI_MODE_ONBOARDING,1 );
     }
+    if( ((0==strcmp(pgc->gc.wifi_ssid,GAGENT_TEST_AP1))||(0==strcmp(pgc->gc.wifi_ssid,GAGENT_TEST_AP2)) )
+        &&(0==strcmp(pgc->gc.wifi_key,GAGENT_TEST_AP_PASS)) 
+      )
+    {
+        //进入产测模式.
+        //这个地方用于切换模式需要重启模块的模式。
+        //不要进入扫描,防止扫描到产测热点又去连接热点，一直重启。
+        GAgent_EnterTest( pgc );
+        pgc->rtinfo.scanWifiFlag = 1;
+    }
     if( GAgent_DRVBootConfigWiFiMode() != GAgent_DRVGetWiFiMode(pgc) )
     {
         //前配置与GAgent启动模式不一样，
@@ -342,8 +352,9 @@ void  GAgent_WiFiEventTick( pgcontext pgc,uint32 dTime_s )
             GAgent_Printf( GAGENT_INFO," WIFI_STATION_CONNECTED Down" );
             GAgent_SetWiFiStatus( pgc,WIFI_STATION_CONNECTED,0 );
             GAgent_SetWiFiStatus( pgc,WIFI_CLIENT_ON,0 );
+            GAgent_SetWiFiStatus( pgc,WIFI_CLOUD_CONNECTED,0 ); /* 路由掉线，设置云端未连接状态 */
             GAgent_SetCloudServerStatus( pgc,MQTT_STATUS_START );
- 
+
             GAgent_DevCheckWifiStatus( WIFI_CLOUD_CONNECTED,0 );
         }
         pgc->rtinfo.waninfo.wanclient_num=0;
@@ -420,10 +431,18 @@ void  GAgent_WiFiEventTick( pgcontext pgc,uint32 dTime_s )
              GAgent_DRVWiFiStopScan( );
              if( 1==ret )
              {
+                GAgent_Printf( GAGENT_INFO,"Connect to TEST AP:%s",GAGENT_TEST_AP1 );
+                strcpy( pgc->gc.wifi_ssid,GAGENT_TEST_AP1 );
+                strcpy( pgc->gc.wifi_key,GAGENT_TEST_AP_PASS );
+                GAgent_DevSaveConfigData( &(pgc->gc) );
                 tempWiFiStatus |= GAgent_DRVWiFi_StationCustomModeStart( GAGENT_TEST_AP1,GAGENT_TEST_AP_PASS,pgc->rtinfo.GAgentStatus );
              }
              else
              {
+                GAgent_Printf( GAGENT_INFO,"Connect to TEST AP:%s",GAGENT_TEST_AP2 );
+                strcpy( pgc->gc.wifi_ssid,GAGENT_TEST_AP2 );
+                strcpy( pgc->gc.wifi_key,GAGENT_TEST_AP_PASS );
+                GAgent_DevSaveConfigData( &(pgc->gc) );
                 tempWiFiStatus |= GAgent_DRVWiFi_StationCustomModeStart( GAGENT_TEST_AP2,GAGENT_TEST_AP_PASS,pgc->rtinfo.GAgentStatus );
              }
         }

@@ -70,6 +70,18 @@ void GAgent_VarInit( pgcontext *pgc )
     (*pgc)->rtinfo.Rxbuf->bufcap = bufCap;
     resetPacket( (*pgc)->rtinfo.Rxbuf );
 
+    (*pgc)->rtinfo.Txbuf = (ppacket)malloc( sizeof(packet) );
+    (*pgc)->rtinfo.Txbuf->allbuf = (uint8 *)malloc( totalCap );
+    while( (*pgc)->rtinfo.Txbuf->allbuf==NULL )
+    {
+        (*pgc)->rtinfo.Txbuf->allbuf = (uint8 *)malloc( totalCap );
+        sleep(1);
+    }
+    memset( (*pgc)->rtinfo.Txbuf->allbuf,0,totalCap );
+    (*pgc)->rtinfo.Txbuf->totalcap = totalCap;
+    (*pgc)->rtinfo.Txbuf->bufcap = bufCap;
+    resetPacket( (*pgc)->rtinfo.Txbuf );
+
     /* get config data form flash */
     GAgent_DevGetConfigData( &(*pgc)->gc );
     (*pgc)->rtinfo.waninfo.CloudStatus=CLOUD_INIT;
@@ -530,6 +542,7 @@ void GAgent_Config( uint8 typed,pgcontext pgc )
                     GAgent_Printf( GAGENT_INFO,"AirLink result ssid:%s key:%s",pgc->gc.wifi_ssid,pgc->gc.wifi_key );
                     tempWiFiStatus |=WIFI_MODE_STATION;
                     pgc->gc.flag |= XPG_CFG_FLAG_CONNECTED;
+                    pgc->gc.flag &=~ XPG_CFG_FLAG_CONFIG_AP;
                     pgc->ls.onboardingBroadCastTime = SEND_UDP_DATA_TIMES;
                     GAgent_DevSaveConfigData( &(pgc->gc) );
                     //tempWiFiStatus |= GAgent_DRVWiFi_StationCustomModeStart( pgc->gc.wifi_ssid,pgc->gc.wifi_key,tempWiFiStatus );  
@@ -556,10 +569,6 @@ void GAgent_Config( uint8 typed,pgcontext pgc )
 uint8 GAgent_EnterTest( pgcontext pgc )
 {
     pgc->rtinfo.scanWifiFlag = 0;
-    memset( pgc->gc.GServer_ip,0,IP_LEN_MAX+1);
-    memset( pgc->gc.m2m_ip,0,IP_LEN_MAX+1);
-
-    GAgent_DevSaveConfigData( &(pgc->gc) );
     GAgent_SetWiFiStatus( pgc,WIFI_MODE_TEST,1 );
     GAgent_DRVWiFiStartScan();
     return 0;

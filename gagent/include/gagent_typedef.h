@@ -250,7 +250,7 @@ typedef struct runtimeinfo_t
     WanInfo waninfo;
     localmodule local;
     fd_set readfd;
-    //ppacket Txbuf;/* send data to local buf */
+    ppacket Txbuf;/* send data to local buf */
     ppacket Rxbuf;/* receive data from local buf */
     NetHostList_str aplist;
     RunTimeInfo3rd cloud3rd;

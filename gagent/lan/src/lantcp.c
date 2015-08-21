@@ -104,15 +104,16 @@ int32 Lan_tcpClientDataHandle(pgcontext pgc, uint32 channel,
     {
         if(pgc->ls.tcpClient[channel].fd > 0)
         {
+            if(pgc->ls.tcpClientNums > 0 && 
+                (LAN_CLIENT_LOGIN_SUCCESS == pgc->ls.tcpClient[channel].isLogin))
+            {
+                pgc->ls.tcpClientNums--;
+            }
+            
             close(pgc->ls.tcpClient[channel].fd);
             pgc->ls.tcpClient[channel].fd = INVALID_SOCKET;
             pgc->ls.tcpClient[channel].isLogin = LAN_CLIENT_LOGIN_FAIL;
             pgc->ls.tcpClient[channel].timeout = 0;
-           
-            if(pgc->ls.tcpClientNums > 0)
-            {
-                pgc->ls.tcpClientNums--;
-            }
 
             if(0 == (pgc->ls.tcpClientNums + pgc->rtinfo.waninfo.wanclient_num))
             {
@@ -530,7 +531,8 @@ int32 Lan_dispatchTCPData(pgcontext pgc, ppacket prxBuf,/* ppacket ptxBuf,*/ int
     cmd = ntohs(cmd);
     
     if((cmd != GAGENT_LAN_CMD_BINDING) && (cmd != GAGENT_LAN_CMD_LOGIN)
-        && (cmd != GAGENT_LAN_CMD_INFO)&& (cmd != GAGENT_LAN_CMD_HOSTPOTS) )
+        && (cmd != GAGENT_LAN_CMD_INFO) && (cmd != GAGENT_LAN_CMD_HOSTPOTS)
+        && (cmd != GAGENT_LAN_CMD_TEST) )
     {
         ret = Lan_checkAuthorization(pgc, clientIndex);
         if(0 == ret)

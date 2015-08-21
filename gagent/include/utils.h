@@ -8,6 +8,7 @@ varc Tran2varc(uint32 remainLen);
 void resetPacket( ppacket pbuf );
 uint32 ParsePacket( ppacket pbuf );
 int8 dealPacket( pgcontext pgc, ppacket pTxBuf );
+void copyPacket(ppacket psrcPacket, ppacket pdestPacket);
 int32 BuildPacket( ppacket pbuf,int32 type );
 uint8 GAgent_SetCheckSum(  uint8 *buf,int packLen );
 uint8 GAgent_SetSN( uint8 *buf );

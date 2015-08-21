@@ -106,15 +106,31 @@ uint32 GAgent_Cloud_SendData( pgcontext pgc,ppacket pbuf,int32 buflen )
     if( isPacketTypeSet( pbuf->type,CLOUD_DATA_OUT ) == 1)
     {
 
-        ret = MQTT_SenData( pgc, pgc->gc.DID, pbuf,buflen );
-        if(0x0093 == cmd || 0x0094 == cmd)
+        pbuf->type = SetPacketType( pbuf->type,CLOUD_DATA_OUT,0 );
+        
+        if(buflen == 0)
         {
-            client->cmd = 0x0091;
-            MQTT_SenData( pgc, pgc->gc.DID, pbuf,buflen );
+            /* no payload */
+            if(0x0094 == cmd)
+            {
+                /* ack to cloud */
+                ret = MQTT_SenData( pgc, pgc->gc.DID, pbuf,buflen );
+            }
+        }
+        else
+        {
+            /* with payload */
+            ret = MQTT_SenData( pgc, pgc->gc.DID, pbuf,buflen );
+            if( 0x0093 == cmd)
+            {
+                /* mcu report status to client */
+                /* transfer 0x93 to 0x91 to compiatable with old sdk */
+                client->cmd = 0x0091;
+                MQTT_SenData( pgc, pgc->gc.DID, pbuf,buflen );
+            }
         }
         GAgent_Printf(GAGENT_INFO,"Send date to cloud :len =%d ,ret =%d",buflen,ret );
         
-        pbuf->type = SetPacketType( pbuf->type,CLOUD_DATA_OUT,0 );
     }
     return ret;
 }
@@ -712,6 +728,7 @@ uint32 Cloud_ConfigDataHandle( pgcontext pgc /*int32 cloudstatus*/ )
             ret = Cloud_ReqRegister( pgc );
             GAgent_SetCloudConfigStatus( pgc,CLOUD_RES_GET_DID );
         }
+        pGlobalVar->rtinfo.waninfo.send2HttpLastTime = GAgent_GetDevTime_S();
         
         return 0;
     }
@@ -807,8 +824,11 @@ uint32 Cloud_ConfigDataHandle( pgcontext pgc /*int32 cloudstatus*/ )
                     pgc->rtinfo.waninfo.httpCloudPingTime = 0;
                     pgc->rtinfo.waninfo.firstConnectHttpTime = GAgent_GetDevTime_S();
 
-                    //login to m2m.
+                    //login to m2m immediatly
                     GAgent_SetCloudServerStatus( pgc,MQTT_STATUS_START );
+                    pgc->rtinfo.waninfo.ReConnectMqttTime = 0;
+                    pgc->rtinfo.waninfo.send2MqttLastTime = GAgent_GetDevTime_S();
+                    
                     ret = Cloud_ReqGetSoftver( pgc,OTATypeflag);
                     GAgent_SetCloudConfigStatus( pgc,CLOUD_RES_GET_SOFTVER );  
 
@@ -890,7 +910,8 @@ uint32 Cloud_ConfigDataHandle( pgcontext pgc /*int32 cloudstatus*/ )
                                 for(i=0; i<32; i++)
                                     pgc->rtinfo.Rxbuf->ppayload[4+2+i] = pgc->mcu.MD5[i];
                                 pgc->rtinfo.Rxbuf->pend = (pgc->rtinfo.Rxbuf->ppayload) + 4 + 2 + 32;
-                                GAgent_LocalDataWriteP0( pgc,pgc->rtinfo.local.uart_fd, pgc->rtinfo.Rxbuf, MCU_NEED_UPGRADE );
+                                copyPacket(pgc->rtinfo.Rxbuf, pgc->rtinfo.Txbuf);
+                                GAgent_LocalDataWriteP0( pgc,pgc->rtinfo.local.uart_fd, pgc->rtinfo.Txbuf, MCU_NEED_UPGRADE );
                                 disableDIDflag=1;
                                 //GAgent_SetCloudConfigStatus ( pgc,CLOUD_CONFIG_OK );
                             }
@@ -1083,7 +1104,7 @@ int32 Cloud_M2MDataHandle(  pgcontext pgc,ppacket pbuf /*, ppacket poutBuf*/, ui
     dTime = abs( GAgent_GetDevTime_S()-pgc->rtinfo.waninfo.send2MqttLastTime );
     if( MQTT_STATUS_START==mqttstatus )
     {
-        if( dTime > pgc->rtinfo.waninfo.ReConnectMqttTime )
+        if( dTime >= pgc->rtinfo.waninfo.ReConnectMqttTime )
         {
             GAgent_Printf(GAGENT_INFO,"Req to connect m2m !");
             GAgent_Printf(GAGENT_INFO,"username: %s password: %s",username,password);
@@ -1092,7 +1113,14 @@ int32 Cloud_M2MDataHandle(  pgcontext pgc,ppacket pbuf /*, ppacket poutBuf*/, ui
             GAgent_SetCloudServerStatus( pgc,MQTT_STATUS_RES_LOGIN );
             GAgent_Printf(GAGENT_INFO," MQTT_STATUS_START ");
             pgc->rtinfo.waninfo.send2MqttLastTime = GAgent_GetDevTime_S();
-            pgc->rtinfo.waninfo.ReConnectMqttTime+=GAGENT_CLOUDREADD_TIME;
+            if( pgc->rtinfo.waninfo.ReConnectMqttTime < GAGENT_MQTT_TIMEOUT)
+            {
+                pgc->rtinfo.waninfo.ReConnectMqttTime = GAGENT_MQTT_TIMEOUT;
+            }
+            else
+            {
+                pgc->rtinfo.waninfo.ReConnectMqttTime += GAGENT_CLOUDREADD_TIME;
+            }
         }
         return 0;
     }
@@ -1112,6 +1140,11 @@ int32 Cloud_M2MDataHandle(  pgcontext pgc,ppacket pbuf /*, ppacket poutBuf*/, ui
               pGlobalVar->rtinfo.waninfo.m2m_socketid=-1;
               //GAgent_SetCloudServerStatus( pgc,MQTT_STATUS_START );
               //GAgent_SetWiFiStatus( pgc,WIFI_CLOUD_CONNECTED,0 );
+              if( ((pgc->rtinfo.GAgentStatus)&WIFI_CLOUD_CONNECTED) != WIFI_CLOUD_CONNECTED )
+              {
+                  GAgent_SetCloudServerStatus( pgc,MQTT_STATUS_START );
+                  pgc->rtinfo.waninfo.ReConnectMqttTime = 0;
+              }
               GAgent_DevCheckWifiStatus( WIFI_CLOUD_CONNECTED,0 );
               GAgent_Printf(GAGENT_DEBUG,"MQTT fd was closed!!");
               GAgent_Printf(GAGENT_DEBUG,"GAgent go to MQTT_STATUS_START");
@@ -1259,6 +1292,9 @@ int32 GAgent_Cloud_GetPacket( pgcontext pgc,ppacket pRxbuf, int32 buflen)
 
     if( (GAgentstatus&WIFI_STATION_CONNECTED) != WIFI_STATION_CONNECTED)
         return -1 ;
+    /* don't connect to cloud in test mode.*/
+    if( WIFI_MODE_TEST==(GAgentstatus&WIFI_MODE_TEST) )
+        return -1;
 
     Cloud_ConfigDataHandle( pgc );
     Mret = Cloud_M2MDataHandle( pgc,pbuf, buflen );

@@ -329,11 +329,28 @@ void GAgent_Lan_SendTcpData(pgcontext pgc,ppacket pTxBuf)
     cmd = pgc->rtinfo.stChannelAttrs.lanClient.cmd;
     sn = pgc->rtinfo.stChannelAttrs.lanClient.sn;
 
-    Lan_sendTcpData(pgc, fd, cmd, sn, pTxBuf);
-    if(GAGENT_LAN_CMD_CTL_93 == cmd)
+    if((pTxBuf->pend - pTxBuf->ppayload) > 0)
     {
-        Lan_sendTcpData(pgc, fd, GAGENT_LAN_CMD_TRANSMIT_91, sn, pTxBuf);
+        /* with payload */
+        Lan_sendTcpData(pgc, fd, cmd, sn, pTxBuf);
+        if(GAGENT_LAN_CMD_CTL_93 == cmd)
+        {
+            /* mcu report status to client */
+            /* transfer 0x93 to 0x91 to compiatable with old sdk  */
+            Lan_sendTcpData(pgc, fd, GAGENT_LAN_CMD_TRANSMIT_91, sn, pTxBuf);
+        }
     }
+    else
+    {
+        /* no payload */
+        if(GAGENT_LAN_CMD_CTLACK_94 == cmd)
+        {
+            /* send ack to APP */
+            Lan_sendTcpData(pgc, fd, cmd, sn, pTxBuf);
+        }
+    }
+        
+    
     
     return ;
 }

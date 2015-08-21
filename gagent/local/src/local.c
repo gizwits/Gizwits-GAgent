@@ -428,7 +428,7 @@ void Local_GetInfo( pgcontext pgc )
 
     for( i=0;i<count;i++ )
     {
-        ret = GAgent_LocalDataWriteP0(pgc, pgc->rtinfo.local.uart_fd, pgc->rtinfo.Rxbuf, MCU_INFO_CMD);
+        ret = GAgent_LocalDataWriteP0(pgc, pgc->rtinfo.local.uart_fd, pgc->rtinfo.Txbuf, MCU_INFO_CMD);
         if(RET_SUCCESS == ret)
         {
             GAgent_Printf( GAGENT_INFO,"GAgent get local info ok.");
@@ -532,6 +532,7 @@ int32 GAgent_LocalSendUpgrade(pgcontext pgc,int32 fd,ppacket pTxBuf,uint16 piece
             stopUpgradeFlag = 1;
             GAgent_Printf(GAGENT_WARNING,"send stop upgrade signal\n");
             GAgent_SendStopUpgrade( pgc, pTxBuf );
+            break;
         }    
         piecenum++;
         if( piecenum == piececount )
@@ -544,11 +545,12 @@ int32 GAgent_LocalSendUpgrade(pgcontext pgc,int32 fd,ppacket pTxBuf,uint16 piece
             remainlen = (pgc->rtinfo.filelen) - (piecenum-1)*piecelen;
             GAgent_ReadOTAFile( (piecenum-1)*piecelen, (int8 *)pTxBuf->ppayload+offset, remainlen );
             pTxBuf->pend = (pTxBuf->ppayload) + 2 + 2 + remainlen;
-            GAgent_LocalDataWriteP0( pgc,pgc->rtinfo.local.uart_fd, pTxBuf, cmd );             
+            ret = GAgent_LocalDataWriteP0( pgc,pgc->rtinfo.local.uart_fd, pTxBuf, cmd );             
             if( RET_FAILED== ret)
             {
                 stopUpgradeFlag = 1;
                 GAgent_SendStopUpgrade( pgc, pTxBuf );
+                break;
             } 
         }
     }
@@ -559,7 +561,6 @@ int32 GAgent_LocalSendUpgrade(pgcontext pgc,int32 fd,ppacket pTxBuf,uint16 piece
     }
     else
     {
-        GAgent_DeleteFirmware( 0, pgc->rtinfo.filelen );
         return RET_FAILED;
     }
 }
@@ -580,11 +581,11 @@ void GAgent_LocalSendGAgentstatus(pgcontext pgc,uint32 dTime_s )
           GAgent_Printf( GAGENT_INFO,"GAgentStatus change, lastGAgentStatus=0x%04x, newGAgentStatus=0x%04x", LastGAgentStatus, GAgentStatus);
           pgc->rtinfo.lastGAgentStatus = pgc->rtinfo.GAgentStatus&LOCAL_GAGENTSTATUS_MASK;
           GAgentStatus = htons(GAgentStatus);
-          memcpy((pgc->rtinfo.Rxbuf->ppayload), (uint8 *)&GAgentStatus, 2);
-          pgc->rtinfo.Rxbuf->pend =  (pgc->rtinfo.Rxbuf->ppayload)+2;
+          memcpy((pgc->rtinfo.Txbuf->ppayload), (uint8 *)&GAgentStatus, 2);
+          pgc->rtinfo.Txbuf->pend =  (pgc->rtinfo.Txbuf->ppayload)+2;
           pgc->rtinfo.updatestatusinterval =  0; 
           //GAgent_Printf(GAGENT_CRITICAL,"updateGagentstatusLast time=%d", (pgc->rtinfo.send2LocalLastTime));
-         GAgent_LocalDataWriteP0( pgc,pgc->rtinfo.local.uart_fd, (pgc->rtinfo.Rxbuf), WIFI_STATUS2MCU );
+         GAgent_LocalDataWriteP0( pgc,pgc->rtinfo.local.uart_fd, (pgc->rtinfo.Txbuf), WIFI_STATUS2MCU );
     }
 
     pgc->rtinfo.updatestatusinterval+= dTime_s;
@@ -594,9 +595,9 @@ void GAgent_LocalSendGAgentstatus(pgcontext pgc,uint32 dTime_s )
         pgc->rtinfo.updatestatusinterval = 0;
         GAgentStatus = pgc->rtinfo.GAgentStatus&LOCAL_GAGENTSTATUS_MASK;
         GAgentStatus = htons(GAgentStatus);
-        memcpy((pgc->rtinfo.Rxbuf->ppayload), (uint8 *)&GAgentStatus, 2);
-        pgc->rtinfo.Rxbuf->pend =  (pgc->rtinfo.Rxbuf->ppayload)+2;
-        GAgent_LocalDataWriteP0( pgc,pgc->rtinfo.local.uart_fd, (pgc->rtinfo.Rxbuf), WIFI_STATUS2MCU );
+        memcpy((pgc->rtinfo.Txbuf->ppayload), (uint8 *)&GAgentStatus, 2);
+        pgc->rtinfo.Txbuf->pend =  (pgc->rtinfo.Txbuf->ppayload)+2;
+        GAgent_LocalDataWriteP0( pgc,pgc->rtinfo.local.uart_fd, (pgc->rtinfo.Txbuf), WIFI_STATUS2MCU );
     }
 }
 void GAgent_LocalInit( pgcontext pgc )
@@ -624,7 +625,7 @@ void GAgent_LocalTick( pgcontext pgc,uint32 dTime_s )
             pgc->rtinfo.local.oneShotTimeout = 0;
             pgc->rtinfo.local.timeoutCnt++;
             GAgent_Printf(GAGENT_CRITICAL,"Local ping...");
-            GAgent_LocalDataWriteP0( pgc,pgc->rtinfo.local.uart_fd, pgc->rtinfo.Rxbuf,WIFI_PING2MCU );
+            GAgent_LocalDataWriteP0( pgc,pgc->rtinfo.local.uart_fd, pgc->rtinfo.Txbuf,WIFI_PING2MCU );
         }
     }
 }
@@ -797,7 +798,8 @@ uint32 GAgent_LocalDataHandle( pgcontext pgc,ppacket Rxbuf,int32 RxLen /*,ppacke
                 {
                     GAgent_Printf(GAGENT_CRITICAL,"start send firmware to MCU!\n");
                     piecelen = (localRxbuf[8+2+MD5len]<<8) + localRxbuf[8+2+MD5len+1];
-                    if( RET_SUCCESS == GAgent_LocalSendUpgrade(pgc,pgc->rtinfo.local.uart_fd, Rxbuf, piecelen, GAGENT_SEND_UPGRADE) )
+                    if( RET_SUCCESS == GAgent_LocalSendUpgrade(pgc,pgc->rtinfo.local.uart_fd,
+                                        pgc->rtinfo.Txbuf, piecelen, GAGENT_SEND_UPGRADE) )
                     {
                         GAgent_Printf(GAGENT_CRITICAL,"send firmware to MCU success!\n");
                     }
