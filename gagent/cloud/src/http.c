@@ -49,7 +49,7 @@ int32 Http_GET( const int8 *host,const int8 *did,int32 socketid )
     }
     memset( getBuf,0,200 );
     //g_globalvar.http_sockettype =HTTP_PROVISION;//http get type.
-    snprintf( getBuf,200,"%s %s%s %s%s%s %s%s%s%s%s",
+    snprintf( getBuf,200,"%s %s%s %s%s%s %s%s%s%s%s%s",
               "GET",url,did,"HTTP/1.1",kCRLFNewLine,
               "Host:",host,kCRLFNewLine
               "Cache-Control: no-cache",kCRLFNewLine,
