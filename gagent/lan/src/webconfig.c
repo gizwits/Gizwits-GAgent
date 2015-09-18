@@ -8,7 +8,7 @@ int32 handleWebConfig( pgcontext pgc,int32 fd)
     pgconfig pConfigData=NULL;
     pConfigData = &(pgc->gc);
 
-    if(fd <= 0) return -1;
+    if(fd < 0) return -1;
 
     buf_head = (char *)malloc(1024);
     if (buf_head == NULL)

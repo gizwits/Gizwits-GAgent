@@ -284,8 +284,9 @@ int mqtt_unsubscribe(mqtt_broker_handle_t* broker, const char* topic, uint16_t* 
 int mqtt_ping(mqtt_broker_handle_t* broker);
 
 /***************************add by Alex lin**********************************************/
-int XPGmqtt_publish_with_qos(mqtt_broker_handle_t* broker, const char* topic, const char* msg,int msgLen, uint8_t retain, uint8_t qos, uint16_t* message_id);
-int XPGmqtt_publish(mqtt_broker_handle_t* broker, const char* topic, const char* msg, int msgLen, uint8_t retain);
+int XPGmqtt_publish_with_qos_(mqtt_broker_handle_t* broker, const char* topic, const char* msg,int msgLen, uint8_t retain, uint8_t qos, uint16_t* message_id, void *extra);
+int XPGmqtt_publish_(mqtt_broker_handle_t* broker, const char* topic, const char* msg, int msgLen, uint8_t retain);
+int XPGmqtt_publish_with_qos(mqtt_broker_handle_t* broker, ppacket pp, uint32 totallen, uint8_t retain, uint8_t qos, uint16_t *message_id);
 
 
 #endif // __LIBEMQTT_H__

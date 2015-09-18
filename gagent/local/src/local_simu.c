@@ -48,7 +48,7 @@ void Local_GetInfo( pgcontext pgc )
     strcpy((char *)pgc->mcu.protocol_ver,mcu_protocol_ver);
     strcpy((char *)pgc->mcu.product_key,mcu_product_key);
     pgc->mcu.passcodeEnableTime = mcu_passcodeEnableTime;
-
+    pgc->mcu.passcodeTimeout = pgc->mcu.passcodeEnableTime;
     GAgent_Printf(GAGENT_INFO,"GAgent_get hard_ver: %s.",pgc->mcu.hard_ver);
     GAgent_Printf(GAGENT_INFO,"GAgent_get soft_ver: %s.",pgc->mcu.soft_ver);
     GAgent_Printf(GAGENT_INFO,"GAgent_get p0_ver: %s.",pgc->mcu.p0_ver);

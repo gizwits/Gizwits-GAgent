@@ -6,7 +6,7 @@ Description     :   open serial
 comport         :   serial comport number
 bandrate        :   serial bandrate 
 nBits           :   serial data Bit
-return          :   >0 the serial fd 
+return          :   >= 0 the serial fd 
                     other fail.
 Add by Alex.lin     --2015-03-31
 ****************************************************************/

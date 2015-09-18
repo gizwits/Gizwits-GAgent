@@ -79,6 +79,7 @@ extern pgcontext pgContextData;
 #define CLOUD_RES_POST_JD_INFO     15
 #define CLOUD_CONFIG_OK            16
 #define CLOUD_REQ_GET_GSERVER_TIME 17
+#define CLOUD_QUERY_MCU_OTA 18
 
 #define LOCAL_DATA_IN     (1<<0)
 #define LOCAL_DATA_OUT    (1<<1)
@@ -99,6 +100,8 @@ extern pgcontext pgContextData;
 #define GAGENT_STA_SCANTIME        (3*ONE_MINUTE)
 #define GAGENT_AP_SCANTIME         (15*ONE_SECOND)
 #define GAGENT_ONBOARDING_TIME     (5*ONE_MINUTE)
+/* whlie the valude of timeout increase up to 375, indicate over 2 hours timeout total */
+#define GAGENT_MQTT_DEADTIME_IN_TIMEOUT (375*ONE_SECOND)
 /*Gizwits heartbeat with eath others, Cloud, SDK/Demo, GAgent and MCU*/
 #define MCU_HEARTBEAT           (55*ONE_SECOND)
 
@@ -111,6 +114,8 @@ extern pgcontext pgContextData;
 #define BROADCAST_TIME          (30*ONE_SECOND)
 /* JD config timeout xs */
 #define JD_CONFIG_TIMEOUT       (1*ONE_SECOND)
+
+#define FILE_TRANSFER_TIMEOUT (15 * ONE_SECOND)
 
 /*For V4, GAgent waiting for MCU response of very CMD send by GAgent, Unit: ms*/
 #define MCU_ACK_TIME_MS    200
@@ -179,6 +184,30 @@ extern pgcontext pgContextData;
 #define GAGENT_STOP_SEND     0x1F
 #define GAGENT_STOP_SEND_ACK 0x20
 
+#define MCU_QUERY_WIFI_INFO 0x21
+#define MCU_QUERY_WIFI_INFO_ACK 0x22
+
+#define MCU_TRANSCTION_REQUEST 0x23
+#define MCU_TRANSCTION_REQUEST_ACK 0x24
+
+#define MCU_TRANSCTION_RESULT 0x25
+#define MCU_TRANSCTION_RESULT_ACK 0x26
+
+#define TRANSCTION_OTA_CHECK 0x01
+#define TRANSCTION_OTA_CHECK_ACK 0x02
+#define TRANSCTION_OTA_CHECK_DONT_NEED_OTA 0x00
+#define TRANSCTION_OTA_CHECK_NEED_OTA 0x01
+
+#define TRANSCTION_OTA_FILE_DOWNLOAD 0x03
+#define TRANSCTION_OTA_FILE_DOWNLOAD_SUCCESS 0x00
+#define TRANSCTION_OTA_FILE_DOWNLOAD_FAILED 0x01
+
+#define TRANSCTION_OTA_FILE_DOWNLOAD_RESULT 0x04
+#define TRANSCTION_OTA_FILE_DOWNLOAD_SUCCESS 0x00
+#define TRANSCTION_OTA_FILE_DOWNLOAD_FAILED 0x01
+
+
+#define TEST_CMD 0x50
 
 /*
  * | head(0xffff) | len(2B) | cmd(2B) | SN(1B) | flag(2B) | payload(xB) | checksum(1B) |
@@ -208,6 +237,15 @@ extern pgcontext pgContextData;
 
 #define BUF_LEN 1024*4      /* depend on you platform ram size */
 #define BUF_HEADLEN 128
+
+#ifdef NDEBUG
+
+#define xpg_assert(test) ((void)0)
+#else
+#define _STR(x) _VAL(x)
+#define _VAL(x) #x
+#define xpg_assert(test) ((test) ? (void)0 :GAgent_Printf(GAGENT_DEBUG, __FILE__ ":" _STR(__LINE__) ":" _STR(__FUNC__) " " #test))
+#endif
 
 #define AS xpg_assert(0) // 显示代码位置
 #define TS (GAgent_Printf(GAGENT_INFO, __FILE__ ":" _STR(__LINE__) ":" _STR(__FUNC__) "Flag:%x,MN:%x ...", g_stGAgentConfigData.flag, g_stGAgentConfigData.magicNumber))
@@ -266,8 +304,10 @@ void GAgentSetLedStatus( uint16 gagentWiFiStatus );
 uint8 GAgent_EnterTest( pgcontext pgc );
 uint8 GAgent_ExitTest( pgcontext pgc );
 int8 GAgent_GetStaWiFiLevel( int8 wifiRSSI );
+void GAgent_EnterNullMode( pgcontext pgc );
 
 uint32 GAgent_BaseTick( void );
+void GAgent_BigDataTick( pgcontext pgc );
 void GAgent_Tick( pgcontext pgc );
 void GAgent_CloudTick( pgcontext pgc,uint32 dTime_s);
 void GAgent_LocalTick( pgcontext pgc,uint32 dTime_s );
@@ -275,4 +315,5 @@ void GAgent_LanTick( pgcontext pgc,uint32 dTime_s );
 void GAgent_RefreshIPTick( pgcontext pgc,uint32 dTime_s );
 void GAgent_WiFiEventTick( pgcontext pgc,uint32 dTime_s );
 int8 GAgent_DRVGetWiFiMode( pgcontext pgc );
+void GAgent_CheckConfigData( GAGENT_CONFIG_S *p_newgc );
 #endif

@@ -8,6 +8,7 @@ INC_DIR= ../../../gagent/include
 ADAPTER := ../adapter
 HAL_SERIAL := ../hal_serial
 NET := ../net
+MISC := ../misc
 
 LOCAL_INC=../../../gagent/local/inc
 LAN_INC=../../../lan/local/inc
@@ -23,14 +24,15 @@ ifdef MY_COMPILER
 	CFLAGS += $(MY_COMPILER)
 endif 
 
-INC_PATH += $(INC_DIR) ../../../iof ../../../arch/linux  $(HAL)/ $(LAN_INC)  $(CLOUD_INC) $(LOCAL_INC) $(NET) $(ADAPTER) $(HAL_SERIAL)
+INC_PATH += $(INC_DIR) ../../../iof ../../../arch/linux  $(HAL)/ $(LAN_INC)  $(CLOUD_INC) $(LOCAL_INC) $(NET) $(ADAPTER) $(HAL_SERIAL) $(MISC)
 CFLAGS += $(foreach dir,$(INC_PATH),-I$(dir)) 
 
 $(LIB_TARGET):\
 	$(OBJ)/adapter_linux.o\
 	$(OBJ)/hal_uart.o\
-	$(OBJ)/netevent.o
-
+	$(OBJ)/netevent.o\
+	$(OBJ)/gprs.o
+	
 	$(AR) crus $(LIB_TARGET) $^
 	install -m 0755 $(LIB_TARGET) $(DLL)
 	rm -rf $@
@@ -51,6 +53,10 @@ $(OBJ)/netevent.o:\
 	$(CC) $(CFLAGS) -c -o $@ $^
 	@echo "build netevent.o ok."	
 
+$(OBJ)/gprs.o:\
+	$(MISC)/gprs.c
+	$(CC) $(CFLAGS) -c -o $@ $^
+	@echo "build gprs.o ok."
 folders:
 	mkdir -p ../obj
 	mkdir -p ../dll

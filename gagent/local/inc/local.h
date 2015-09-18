@@ -27,5 +27,8 @@ void Local_GetInfo( pgcontext pgc );
 void Local_Ack2MCU( int32 fd,uint8 sn,uint8 cmd );
 void Local_Ack2MCUwithP0( ppacket pbuf,int32 fd,uint8 sn,uint8 cmd );
 int32 GAgent_Local_ExtractOnePacket(uint8 *buf);
-
+int32 trans_sendotadownloadresult(pgcontext pgc, u8 result);
+int32 trans_startmcuota(pgcontext pgc, u8 *url);
+int32 trans_sendfirmwareinfo(pgcontext pgc, u8 *sv, u8 *url);
+int32 trans_checkmcuota(pgcontext pgc, u8 *sv, u8 *url);
 #endif

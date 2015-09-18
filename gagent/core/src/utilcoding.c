@@ -194,7 +194,7 @@ int8 isPacketTypeSet( int32 currentType,int32 type )
         return 1;
     }
     else
-    { 
+    {
         return 0;
     }
 }
@@ -211,6 +211,18 @@ void resetPacket( ppacket pbuf )
     pbuf->ppayload = pbuf->allbuf+BUF_HEADLEN;
     pbuf->pend   = pbuf->allbuf+BUF_HEADLEN;
     memset( pbuf->allbuf,0,pbuf->totalcap );
+}
+
+void debugpacket(ppacket pp)
+{
+    if(pp->pend < pp->ppayload)
+    {
+        GAgent_Printf(GAGENT_DEBUG, "Wrong packet to dump");
+        return;
+    }
+    GAgent_Printf(GAGENT_DEBUG, "Packet info: len = %x, head len = %x, payload len = %x",
+                  pp->pend - pp->phead, pp->ppayload - pp->phead, pp->pend - pp->ppayload);
+    GAgent_DebugPacket(pp->phead, pp->pend - pp->phead);
 }
 
 /***************************************************
@@ -354,11 +366,13 @@ void setChannelAttrs(pgcontext pgc, stCloudAttrs_t *cloudClient, stLanAttrs_t *l
     if(isBroadCast)
     {
         pgc->rtinfo.stChannelAttrs.lanClient.fd = -1;
-        pgc->rtinfo.stChannelAttrs.lanClient.cmd = GAGENT_LAN_CMD_CTL_93;
+        /* use 0x0091, Cloud and APP will support cmd 0x0091 */
+        pgc->rtinfo.stChannelAttrs.lanClient.cmd = GAGENT_LAN_CMD_TRANSMIT_91;
         pgc->rtinfo.stChannelAttrs.lanClient.sn = 0;
 
         pgc->rtinfo.stChannelAttrs.cloudClient.phoneClientId[0] = '\0';
-        pgc->rtinfo.stChannelAttrs.cloudClient.cmd = GAGENT_LAN_CMD_CTL_93;
+        /* use 0x0091, Cloud and APP will support cmd 0x0091 */
+        pgc->rtinfo.stChannelAttrs.cloudClient.cmd = GAGENT_LAN_CMD_TRANSMIT_91;
         pgc->rtinfo.stChannelAttrs.cloudClient.sn = 0;
 
     }

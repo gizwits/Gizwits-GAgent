@@ -217,7 +217,7 @@ static void Lan_Upload_AllApp(pgcontext pgc, ppacket pTxBuf)
     
     for(i = 0; i < LAN_TCPCLIENT_MAX; i++)
     {
-        if(pgc->ls.tcpClient[i].fd > 0 && 
+        if(pgc->ls.tcpClient[i].fd >= 0 && 
             LAN_CLIENT_LOGIN_SUCCESS == pgc->ls.tcpClient[i].isLogin)
         {
             send(pgc->ls.tcpClient[i].fd, pTxBuf->phead, pTxBuf->pend - pTxBuf->phead, 0);
@@ -333,12 +333,6 @@ void GAgent_Lan_SendTcpData(pgcontext pgc,ppacket pTxBuf)
     {
         /* with payload */
         Lan_sendTcpData(pgc, fd, cmd, sn, pTxBuf);
-        if(GAGENT_LAN_CMD_CTL_93 == cmd)
-        {
-            /* mcu report status to client */
-            /* transfer 0x93 to 0x91 to compiatable with old sdk  */
-            Lan_sendTcpData(pgc, fd, GAGENT_LAN_CMD_TRANSMIT_91, sn, pTxBuf);
-        }
     }
     else
     {
@@ -419,7 +413,7 @@ void GAgent_LanTick( pgcontext pgc,uint32 dTime_s )
 
     for(i = 0; i < LAN_TCPCLIENT_MAX; i++)
     {
-        if(pgc->ls.tcpClient[i].fd > 0)
+        if(pgc->ls.tcpClient[i].fd >= 0)
         {
             if( pgc->ls.tcpClient[i].timeout <= dTime_s )
             {
@@ -516,7 +510,7 @@ uint32 GAgent_Lan_Handle(pgcontext pgc, ppacket prxBuf,int32 len)
     for(i = 0;i < LAN_TCPCLIENT_MAX; i++)
     {
         fd = pgc->ls.tcpClient[i].fd;
-        if(fd <= 0)
+        if(fd < 0)
             continue;
         if(FD_ISSET(fd, &(pgc->rtinfo.readfd)))
         {
@@ -541,6 +535,7 @@ uint32 GAgent_Lan_Handle(pgcontext pgc, ppacket prxBuf,int32 len)
 void GAgent_LANInit(pgcontext pgc)
 {
     LAN_tcpClientInit(pgc);
+    Lan_ClearClientAttrs(pgc, &pgc->ls.srcAttrs);
     LAN_InitSocket(pgc);  
     GAgent_SetWiFiStatus( pgc,WIFI_MODE_BINDING,1 );  //enable Bind
     pgc->ls.broResourceNum = 0;//enable public broadcast resource

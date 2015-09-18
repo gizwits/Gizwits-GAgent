@@ -57,7 +57,7 @@ typedef void (*task)(void *arg);
 /* use for mqtt var len */
 typedef struct _varc
 {
-    int8 var[2];//the value of mqtt
+    int8 var[4];//the value of mqtt
     int8 varcbty;// 1b-4b B=Bit,b=byte
 } varc;
 
@@ -76,7 +76,8 @@ typedef struct _jd_info
 typedef enum OTATYPE_T
 {
     OTATYPE_WIFI = 1,
-    OTATYPE_MCU = 2
+    OTATYPE_MCU = 2,
+    OTATYPE_INVALID
 }OTATYPE;
 
 typedef struct _packet
@@ -146,7 +147,7 @@ typedef struct
     stCloudAttrs_t cloudClient;
 }stChannelAttrs_t;
 
-typedef struct 
+typedef struct
 {
    uint8 cmd;
    uint8 sn;
@@ -226,6 +227,34 @@ typedef struct _NetHostList_str
      uint8 ApNum;
      ApHostList_str* ApList;
 }NetHostList_str;
+
+/* 大文件传输结构体 */
+typedef struct
+{
+    /* 同步标志 */
+    /* 同时作为全局标志 */
+    int using;
+    /* 文件信息 */
+    int filename;
+    /* 总大小 */
+    int totalsize;
+    /* 收取大小 */
+    int recvsize;
+    /* 包大小 */
+    int piecesize;
+    /* 包数量 */
+    int piececount;
+    /* checksum值。具体形式待定 */
+    int checksum;
+    /* 当前所存放的包信息 */
+    int currentpiece;
+    /* 最后一次收到文件数据的时间。用来做超时判断 */
+    int lastrecv;
+    int lastpiece;
+    /* 数据段。使用packet类型 */
+    ppacket data;
+}fdesc, *pfdesc;
+
 typedef struct runtimeinfo_t
 {
     uint32 clock;
@@ -255,7 +284,10 @@ typedef struct runtimeinfo_t
     NetHostList_str aplist;
     RunTimeInfo3rd cloud3rd;
     stChannelAttrs_t stChannelAttrs;    /* the attrs of channel connected to GAgent */
-
+    fdesc file;
+    int local_send_ready_signal_flag;
+    OTATYPE OTATypeflag;
+    int8 onlinePushflag;
 }runtimeinfo, *pruntimeinfo;
 
 typedef struct modeinfo_t
@@ -296,6 +328,15 @@ typedef struct lanserver_t
     struct sockaddr_t addr;
 }lanserver, *planserver;
 
+typedef struct
+{
+    uint8 pk[32 + 2];
+    uint8 did[32 + 2];
+    uint8 hv[8 + 2];
+    uint8 sv[8 + 2];
+    uint8 check;
+}trans_mcuotainfo, *ptrans_mcuotainfo;
+
 /* global context, or gagent context */
 typedef struct gagentcontext_t
 {
@@ -308,6 +349,7 @@ typedef struct gagentcontext_t
     webserver ws;
     /* lanserver ls; */
     lanserver ls;
+    trans_mcuotainfo tmcu;
     /* logman lm; */
     gconfig gc;
 }gcontext, *pgcontext;

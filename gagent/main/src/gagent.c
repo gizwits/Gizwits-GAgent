@@ -14,8 +14,9 @@ Add by Alex.lin     --2015-03-27
 ****************************************************************/
 void GAgent_Init( pgcontext *pgc )
 {
-    GAgent_DevInit( *pgc );
     GAgent_NewVar( pgc );
+    /* 应该先分配空间。或者不使用参数 */
+    GAgent_DevInit( *pgc );
     /* -1: no log */
     GAgent_loglevelSet( /*-1*/GAGENT_DUMP/*GAGENT_INFO*//*GAGENT_WARNING*/ );
 
@@ -84,6 +85,8 @@ void GAgent_VarInit( pgcontext *pgc )
 
     /* get config data form flash */
     GAgent_DevGetConfigData( &(*pgc)->gc );
+    GAgent_CheckConfigData( &(*pgc)->gc );
+
     (*pgc)->rtinfo.waninfo.CloudStatus=CLOUD_INIT;
 
     /* get mac address */
@@ -136,6 +139,9 @@ void GAgent_VarInit( pgcontext *pgc )
     (*pgc)->rtinfo.waninfo.send2HttpLastTime = GAgent_GetDevTime_S();
     (*pgc)->rtinfo.waninfo.firstConnectHttpTime = GAgent_GetDevTime_S();
     (*pgc)->rtinfo.waninfo.httpCloudPingTime = 0;
+    (*pgc)->rtinfo.OTATypeflag = OTATYPE_WIFI;
+    (*pgc)->rtinfo.onlinePushflag = 0;
+    Cloud_ClearClientAttrs(*pgc, &((*pgc)->rtinfo.waninfo.srcAttrs));
     GAgent_DevSaveConfigData( &((*pgc)->gc) );
 }
 
@@ -146,6 +152,7 @@ void GAgent_dumpInfo( pgcontext pgc )
     GAgent_Printf(GAGENT_DEBUG,"GAgent mac :%s",pgc->minfo.szmac );
     GAgent_Printf(GAGENT_DEBUG,"GAgent passcode :%s len=%d",pgc->gc.wifipasscode,strlen( pgc->gc.wifipasscode ) );
     GAgent_Printf(GAGENT_DEBUG,"GAgent did :%s len:%d",pgc->gc.DID,strlen(pgc->gc.DID) );
+    GAgent_Printf(GAGENT_DEBUG,"GAgent old passcode:%s",pgc->gc.old_wifipasscode );
     GAgent_Printf(GAGENT_DEBUG,"GAgent old did :%s len:%d",pgc->gc.old_did,strlen(pgc->gc.old_did) );
     GAgent_Printf(GAGENT_DEBUG,"GAgent old pk :%s len:%d",pgc->gc.old_productkey,strlen(pgc->gc.old_productkey) );
     GAgent_Printf(GAGENT_DEBUG,"GAgent AP name:%s",pgc->minfo.ap_name );
@@ -190,30 +197,30 @@ void  GAgent_AddSelectFD( pgcontext pgc )
     int32 i=0;
     FD_ZERO( &(pgc->rtinfo.readfd) );
 
-    if( pgc->rtinfo.waninfo.http_socketid>0 )
+    if( pgc->rtinfo.waninfo.http_socketid >= 0 )
         FD_SET( pgc->rtinfo.waninfo.http_socketid,&(pgc->rtinfo.readfd) );
 
-    if( pgc->rtinfo.waninfo.m2m_socketid>0 )
+    if( pgc->rtinfo.waninfo.m2m_socketid >= 0 )
         FD_SET( pgc->rtinfo.waninfo.m2m_socketid,&(pgc->rtinfo.readfd) );
 
-    if( pgc->rtinfo.local.uart_fd>0 )
+    if( pgc->rtinfo.local.uart_fd >= 0 )
         FD_SET( pgc->rtinfo.local.uart_fd,&(pgc->rtinfo.readfd));
 
-    if( pgc->ls.tcpServerFd > 0 )
+    if( pgc->ls.tcpServerFd >= 0 )
         FD_SET( pgc->ls.tcpServerFd, &(pgc->rtinfo.readfd) );
 
-    if( pgc->ls.udpServerFd > 0 )
+    if( pgc->ls.udpServerFd >= 0 )
         FD_SET( pgc->ls.udpServerFd, &(pgc->rtinfo.readfd) );
 
-    if( pgc->ls.tcpWebConfigFd > 0 )
+    if( pgc->ls.tcpWebConfigFd >= 0 )
         FD_SET( pgc->ls.tcpWebConfigFd, &(pgc->rtinfo.readfd) );
     
-    if( pgc->ls.udp3rdCloudFd >0 )
+    if( pgc->ls.udp3rdCloudFd >= 0 )
         FD_SET( pgc->ls.udp3rdCloudFd, &(pgc->rtinfo.readfd) );
     
     for(i = 0; i < LAN_TCPCLIENT_MAX; i++)
     {
-        if( pgc->ls.tcpClient[i].fd > 0 )
+        if( pgc->ls.tcpClient[i].fd >= 0 )
         {
             FD_SET( pgc->ls.tcpClient[i].fd, &(pgc->rtinfo.readfd) );
         }
@@ -248,7 +255,7 @@ int32 GAgent_MaxFd( pgcontext pgc  )
     
     for(i = 0; i < LAN_TCPCLIENT_MAX; i++)
     {
-        if(pgc->ls.tcpClient[i].fd >0 && maxfd< pgc->ls.tcpClient[i].fd )
+        if(pgc->ls.tcpClient[i].fd >= 0 && maxfd < pgc->ls.tcpClient[i].fd )
         {
             maxfd = pgc->ls.tcpClient[i].fd;
         }
@@ -263,7 +270,7 @@ int32 GAgent_SelectFd(pgcontext pgc,int32 sec,int32 usec )
     int32 select_fd=0;
     GAgent_AddSelectFD( pgc );
     select_fd = GAgent_MaxFd( pgc );
-    if( select_fd>0 )
+    if( select_fd >= 0 )
     {
         ret = GAgent_select(select_fd+1,&(pgc->rtinfo.readfd),NULL,NULL,sec,usec );
         if( ret==0 )
@@ -383,20 +390,16 @@ void GAgent_RefreshIPTick( pgcontext pgc,uint32 dTime_s )
 {
     uint32 cTime=0;
     int8 tmpip[32] = {0},failed=0,ret=0;
-
+    //产测模式下不用进行IP解析，因为此模式不连接云端
     if( ((pgc->rtinfo.GAgentStatus)&WIFI_MODE_TEST) == WIFI_MODE_TEST )
     {
         GAgent_Printf( GAGENT_INFO,"In WIFI_MODE_TEST...");
         return ;
     }
+    //未连接到路由器，不用进行IP解析
     if( ((pgc->rtinfo.GAgentStatus)&WIFI_STATION_CONNECTED)!=WIFI_STATION_CONNECTED )
     {
         GAgent_Printf( GAGENT_INFO," not in WIFI_STATION_CONNECTED ");
-        return ;
-    }
-    if( ((pgc->rtinfo.GAgentStatus)&WIFI_MODE_BINDING)!=WIFI_MODE_BINDING )
-    {
-        GAgent_Printf( GAGENT_INFO," in WIFI_MODE_BINDING ");
         return ;
     }
     pgc->rtinfo.waninfo.RefreshIPLastTime+=dTime_s;
@@ -579,6 +582,7 @@ uint8 GAgent_ExitTest( pgcontext pgc )
     GAgent_DRVWiFi_StationDisconnect();
     GAgent_SetWiFiStatus( pgc,WIFI_MODE_TEST,0 );
     GAgent_DRVWiFiStopScan( );
+    GAgent_EnterNullMode( pgc );
     return 0;
 }
 /****************************************************************
@@ -589,11 +593,13 @@ int32 GAgent_Cloud_OTAByUrl( pgcontext pgc,int8 *downloadUrl,OTATYPE otatype )
 {
     if( OTATYPE_WIFI == otatype )
     {
-         return GAgent_WIFIOTAByUrl( pgc, downloadUrl );
+        GAgent_Printf( GAGENT_CRITICAL,"Start WIFI OTA...");
+        return GAgent_WIFIOTAByUrl( pgc, downloadUrl );
     }
     else
     {
-         return GAgent_MCUOTAByUrl( pgc, downloadUrl );
+        GAgent_Printf( GAGENT_CRITICAL,"Start MCU OTA...");
+        return GAgent_MCUOTAByUrl( pgc, downloadUrl );
     }   
 }
 /****************************************************************
@@ -670,11 +676,90 @@ void GAgent_Tick( pgcontext pgc )
     dTime = GAgent_BaseTick();
     if( dTime<1 )
         return ;
+
     GAgent_DevTick();
     GAgent_CloudTick( pgc,dTime );
     GAgent_LocalTick( pgc,dTime );
     GAgent_LanTick( pgc,dTime );
     GAgent_WiFiEventTick( pgc,dTime );
     GAgent_RefreshIPTick( pgc,dTime );
+    GAgent_BigDataTick( pgc );
+}
 
+/****************************************************************
+FunctionName    :   GAgent_GcV1toV2
+Description     :   check the gagent config struct ,if it's not the
+                    new will be update to new struct.
+return          :   NULL
+            ---Add by Alex.lin 2015-08-
+****************************************************************/
+void GAgent_CheckConfigData( GAGENT_CONFIG_S *p_newgc )
+{
+    uint32 OLD_MAGIC_NUMBER=0x12345678;
+    GAgent_OldCONFIG_S *p_oldgc=NULL;
+    if( OLD_MAGIC_NUMBER==(p_newgc->magicNumber) )
+    {
+        uint8 retime=0;
+        while( NULL==p_oldgc )
+        {
+            retime++;
+            p_oldgc = (GAgent_OldCONFIG_S*)malloc(sizeof(GAgent_OldCONFIG_S));
+            if( retime>10 )
+            {
+                return ;
+            }
+            msleep(100);
+        }
+        memset( p_oldgc,0,sizeof(GAgent_OldCONFIG_S) );
+        Dev_GAgentGetOldConfigData( p_oldgc );
+
+        //以下做结构体搬移操作
+        p_newgc->magicNumber = GAGENT_MAGIC_NUM;
+        p_newgc->flag = p_oldgc->flag;
+        p_newgc->airkiss_value = p_oldgc->airkiss_value;
+
+        //老结构体wifipasscode定义为16个字节
+        memcpy( p_newgc->wifipasscode,p_oldgc->wifipasscode,16 );
+        p_newgc->wifipasscode[16] = '\0';
+
+        memcpy( p_newgc->wifi_ssid,p_oldgc->wifi_ssid,SSID_LEN_MAX );
+        p_newgc->wifi_ssid[SSID_LEN_MAX] = '\0';
+        
+        memcpy( p_newgc->wifi_key,p_oldgc->wifi_key,WIFIKEY_LEN_MAX );
+        p_newgc->wifi_key[WIFIKEY_LEN_MAX] = '\0';
+        
+        memcpy( p_newgc->DID,p_oldgc->Cloud_DId,DID_LEN );
+        memcpy( p_newgc->FirmwareVerLen,p_oldgc->FirmwareVerLen,2 );
+        memcpy( p_newgc->FirmwareVer,p_oldgc->FirmwareVer,FIRMWARELEN );
+        p_newgc->FirmwareVer[FIRMWARELEN] = '\0';
+
+        memcpy( p_newgc->old_did,p_oldgc->old_did,DID_LEN );
+        //老结构体wifipasscode定义为16个字节
+        memcpy( p_newgc->old_wifipasscode,p_oldgc->old_wifipasscode,16 );
+        p_newgc->old_wifipasscode[16] = '\0';
+        
+        memcpy( p_newgc->old_productkey,p_oldgc->old_productkey,PK_LEN+1 );
+        //老结构体ip大小定义为17个字节.
+        memcpy( p_newgc->m2m_ip,p_oldgc->m2m_ip,17 );
+        memcpy( p_newgc->GServer_ip,p_oldgc->api_ip,17 );
+
+        memcpy( p_newgc->cloud3info.jdinfo.product_uuid,p_oldgc->jdinfo.product_uuid,PRODUCTUUID_LEN );
+        p_newgc->cloud3info.jdinfo.product_uuid[PRODUCTUUID_LEN] = '\0';
+
+        memcpy( p_newgc->cloud3info.jdinfo.feed_id,p_oldgc->jdinfo.feed_id,FEEDID_LEN );
+        p_newgc->cloud3info.jdinfo.feed_id[FEEDID_LEN]='\0';
+
+        p_newgc->cloud3info.jdinfo.ischanged = p_oldgc->jdinfo.ischanged;
+        p_newgc->cloud3info.jdinfo.tobeuploaded = p_oldgc->jdinfo.tobeuploaded;
+
+        if( 0==GAgent_DevSaveConfigData( p_newgc ) )
+        {
+            GAgent_Printf( GAGENT_INFO," %s %d updata GAGENT_CONFIG_S ok.",__FUNCTION__,__LINE__ );
+        }
+        else
+        {
+            GAgent_Printf( GAGENT_INFO," %s %d updata GAGENT_CONFIG_S fail.",__FUNCTION__,__LINE__ );   
+        }
+        free( p_oldgc );
+    }
 }

@@ -3,6 +3,7 @@
 #include "http.h"
 #include "cloud.h"
 #include "netevent.h"
+#include "gprs.h"
 
 #define GAGENT_CONFIG_FILE "./config/gagent_config.config"
 void msleep(int m_seconds)
@@ -165,6 +166,29 @@ uint32 GAgent_DevSaveConfigData( gconfig *pConfig )
     close(fd);
     return 0;
 }
+
+/********************************************************
+ Function : 兼容旧版本考虑，获取旧版本的配置文件
+            2015-04以后不需要实现该函数，调用GAgent_DevGetConfigData即可
+ Return :  > 0 读取到的字节数
+           = 0 无可读取数据或读到文件尾
+           < 0 异常
+ ********************************************************/
+int8 Dev_GAgentGetOldConfigData( GAgent_OldCONFIG_S *p_oldgc )
+{
+    int8 ret = 0;
+    int fd = open(GAGENT_CONFIG_FILE, O_RDONLY );
+    if(-1 == fd)
+    {
+        perror("read open file fail");
+        return -1;
+    }
+    ret = read(fd, p_oldgc, sizeof(GAgent_OldCONFIG_S));
+    close(fd);
+
+    return ret;
+}
+
 uint32 GAgent_SaveFile( int offset,uint8 *buf,int len )
 {
     int fd;  
@@ -340,14 +364,14 @@ int32 GAgent_OpenUart( int32 BaudRate,int8 number,int8 parity,int8 stopBits,int8
 {
     int32 uart_fd=0;
     uart_fd = serial_open( UART_NAME,BaudRate,number,'N',stopBits );
-    if( uart_fd<=0 )
+    if( uart_fd < 0 )
         return (-1);
     return uart_fd;
 }
 void GAgent_LocalDataIOInit( pgcontext pgc )
 {
     pgc->rtinfo.local.uart_fd = GAgent_OpenUart( 9600,8,0,0,0 );
-    while( pgc->rtinfo.local.uart_fd <=0 )
+    while( pgc->rtinfo.local.uart_fd < 0 )
     {
         pgc->rtinfo.local.uart_fd = GAgent_OpenUart( 9600,8,0,0,0 );
         sleep(1);
@@ -503,6 +527,64 @@ int32 GAgent_WIFIOTAByUrl( pgcontext pgc,int8 *szdownloadUrl )
         close(http_socketid);
         return RET_FAILED;
     }
+}
+uint32 GAgent_getIpaddr(uint8 *ipaddr)
+{
+    return RET_SUCCESS;
+}
+uint32 GAgent_sendWifiInfo( pgcontext pgc )
+{
+    int32 pos = 0;
+    uint8 ip[16] = {0};
+    if(0 != GAgent_getIpaddr(ip))
+    {
+        GAgent_Printf(GAGENT_WARNING,"GAgent get ip failed!");
+    }  
+    
+    /* ModuleType */
+    pgc->rtinfo.Txbuf->ppayload[0] = 0x01;
+    pos += 1;
+
+    /* MCU_PROTOCOLVER */
+    memcpy( pgc->rtinfo.Txbuf->ppayload+pos, pgc->mcu.protocol_ver, MCU_PROTOCOLVER_LEN );
+    pos += MCU_PROTOCOLVER_LEN;
+
+    /* HARDVER */
+    memcpy( pgc->rtinfo.Txbuf->ppayload+pos, WIFI_HARDVER, 8 );
+    pos += 8;
+
+    /* SOFTVAR */
+    memcpy( pgc->rtinfo.Txbuf->ppayload+pos, WIFI_SOFTVAR, 8 );
+    pos += 8;
+
+    /* MAC */
+    memset( pgc->rtinfo.Txbuf->ppayload+pos, 0 , 16 );
+    memcpy( pgc->rtinfo.Txbuf->ppayload+pos, pgc->minfo.szmac, 16 );
+    pos += 16;
+  
+    /* IP */ 
+    memset( pgc->rtinfo.Txbuf->ppayload+pos, 0 , 16 );
+    memcpy( pgc->rtinfo.Txbuf->ppayload+pos, ip, strlen(ip) );
+    pos += 16;
+
+    /* MCU_MCUATTR */
+    memcpy( pgc->rtinfo.Txbuf->ppayload+pos, pgc->mcu.mcu_attr, MCU_MCUATTR_LEN);
+    pos += MCU_MCUATTR_LEN;
+
+    pgc->rtinfo.Txbuf->pend = pgc->rtinfo.Txbuf->ppayload + pos;
+    return RET_SUCCESS;   
+}
+
+/****************************************************************
+        FunctionName  :  GAgent_sendmoduleinfo.
+        Description      :  send module info,according to the actual situation to choose one .
+        return             :  0 successful other fail.
+****************************************************************/
+uint32 GAgent_sendmoduleinfo( pgcontext pgc )
+{
+//    return GAgent_sendWifiInfo(pgc);
+    
+    return GAgent_sendGprsInfo(pgc);
 }
 
 /*

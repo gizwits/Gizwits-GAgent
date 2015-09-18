@@ -22,7 +22,7 @@ int32 Mqtt_IntoRunning( pgcontext pgc );
 int32 WAN_DoMCUCommand(u8 clientid[32], u8 *pP0Data, int32 pP0Datalen);
 
 void MQTT_HeartbeatTime(void);
-void Mqtt_ReqOnlineClient(void);
+void Mqtt_ReqOnlineClient(pgcontext pgc);
 int32 MQTT_SenData( pgcontext pgc, int8 *szDID, ppacket pbuf,int32 buflen );
 
 

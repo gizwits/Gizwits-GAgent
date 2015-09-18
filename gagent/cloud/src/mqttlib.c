@@ -336,16 +336,18 @@ int mqtt_ping(mqtt_broker_handle_t* broker) {
     return 1;
 }
 
-int XPGmqtt_publish(mqtt_broker_handle_t* broker, const char* topic, const char* msg, int msgLen, uint8_t retain) {
-    return XPGmqtt_publish_with_qos(broker, topic, msg, msgLen,retain, 0, NULL);
+int XPGmqtt_publish_(mqtt_broker_handle_t* broker, const char* topic, const char* msg, int msgLen, uint8_t retain) {
+    return XPGmqtt_publish_with_qos_(broker, topic, msg, msgLen,retain, 0, NULL, 0);
 }
-int XPGmqtt_publish_with_qos(mqtt_broker_handle_t* broker, 
+
+int XPGmqtt_publish_with_qos_(mqtt_broker_handle_t* broker, 
                              const char* topic, 
                              const char* msg,
                              int msgLen, 
                              uint8_t retain, 
                              uint8_t qos, 
-                             uint16_t* message_id) 
+                             uint16_t* message_id,
+                             void *extra) 
 {
     uint16_t topiclen = strlen(topic);
 
@@ -356,14 +358,18 @@ int XPGmqtt_publish_with_qos(mqtt_broker_handle_t* broker,
     int var_headerLen;
     int fixed_headerLen;
     int packetLen;
+    int totallen;
 
     uint8_t *var_header=NULL;
     uint8_t *fixed_header=NULL;
-    uint8_t fixedHeaderSize = 2;
+    uint8_t fixedHeaderSize = 1;
     uint16_t remainLen;
     uint8_t *packet = NULL;
+    varc sendvarc;
 /***************************************************************/	
-
+    /* fixed_header:type(1b), remainLen(varc) */
+    /* var_header:var_headerLen(varc), topic */
+    /* msg:data */
     if(qos == 1) {
         qos_size = 2; // 2 bytes for QoS
         qos_flag = MQTT_QOS1_FLAG;
@@ -372,8 +378,19 @@ int XPGmqtt_publish_with_qos(mqtt_broker_handle_t* broker,
         qos_size = 2; // 2 bytes for QoS
         qos_flag = MQTT_QOS2_FLAG;
     }
+    else if(qos == 0xFF)
+    {
+        /* 有附加数据 */
+        totallen = (int)extra;
+    }
+
+    /* if(pgContextData->fdesc.using == 1) */
+    /* { */
+    /*     totallen = pgContextData->fdesc.totalsize; */
+    /* } */
 /************************add by alex*******************************/
     // Variable header
+    /* topiclen(2b), topic(topiclen) */
     var_header = ( uint8_t* )malloc( topiclen+2+qos_size );
     
     if( var_header==NULL )
@@ -402,12 +419,21 @@ int XPGmqtt_publish_with_qos(mqtt_broker_handle_t* broker,
     // need up to two bytes of length (handles up to 16,383 (almost 16k) sized message)
 
     /**********************add by alex**************************************/
-    remainLen = var_headerLen+msgLen;
-    /***********************************************************************/
-    if (remainLen > 127) {
-        fixedHeaderSize++;          // add an additional byte for Remaining Length
+    if(qos == 0xFF)
+    {
+        remainLen = var_headerLen + totallen;
+    }
+    else
+    {
+        remainLen = var_headerLen+msgLen;
     }
 
+    /***********************************************************************/
+    /* if (remainLen > 127) { */
+        /* fixedHeaderSize++;          // add an additional byte for Remaining Length */
+    /* } */
+    sendvarc = Tran2varc(remainLen);
+    fixedHeaderSize += sendvarc.varcbty;
     /***********************add by alex *******************/
     fixed_headerLen = fixedHeaderSize;
     fixed_header = (uint8_t *)malloc( fixed_headerLen );
@@ -424,15 +450,16 @@ int XPGmqtt_publish_with_qos(mqtt_broker_handle_t* broker,
         fixed_header[0] |= MQTT_RETAIN_FLAG;
     }
     // Remaining Length
-    if (remainLen <= 127) {
-        fixed_header[1] = remainLen;
-    } else {
-        // first byte is remainder (mod) of 128, then set the MSB to indicate more bytes
-        fixed_header[1] = remainLen % 128;
-        fixed_header[1] = fixed_header[1] | 0x80;
-        // second byte is number of 128s
-        fixed_header[2] = remainLen / 128;
-    }
+    /* if (remainLen <= 127) { */
+    /*     fixed_header[1] = remainLen; */
+    /* } else { */
+    /*     // first byte is remainder (mod) of 128, then set the MSB to indicate more bytes */
+    /*     fixed_header[1] = remainLen % 128; */
+    /*     fixed_header[1] = fixed_header[1] | 0x80; */
+    /*     // second byte is number of 128s */
+    /*     fixed_header[2] = remainLen / 128; */
+    /* } */
+    memcpy(fixed_header + 1, sendvarc.var, sendvarc.varcbty);
     /**********************add by alex******************************/
     packetLen = fixed_headerLen+var_headerLen+msgLen;
     packet = (uint8_t *)malloc(packetLen);
@@ -448,17 +475,137 @@ int XPGmqtt_publish_with_qos(mqtt_broker_handle_t* broker,
     memcpy(packet+fixed_headerLen+var_headerLen, msg, msgLen);
 
     // Send the packet
-    if(broker->mqttsend(broker->socketid, packet, packetLen ) < packetLen) {
-        free(var_header);
-        free( fixed_header );
-        free(packet);
-        return -1;
-    }
+    GAgent_Printf(GAGENT_DEBUG, "packet send to cloud:");
+    GAgent_DebugPacket(packet, packetLen);
+    /* if(broker->mqttsend(broker->socketid, packet, packetLen ) < packetLen) { */
+    /*     free(var_header); */
+    /*     free( fixed_header ); */
+    /*     free(packet); */
+    /*     return -1; */
+    /* } */
     free( fixed_header );
     free(var_header);
     free(packet);
     return 1;
 }
+#if 1
+int XPGmqtt_publish(mqtt_broker_handle_t* broker, ppacket pp, uint8_t retain)
+{
+    return XPGmqtt_publish_with_qos(broker, pp, 0, 0, 0, NULL);
+}
+#endif
+#if 1
+int XPGmqtt_publish_with_qos(mqtt_broker_handle_t* broker,
+                              ppacket pp,
+                              uint32 totallen,
+                              uint8_t retain,
+                              uint8_t qos,
+                              uint16_t *message_id)
+{
+
+    uint8_t qos_flag = MQTT_QOS0_FLAG;
+    uint8_t qos_size = 0; // No QoS included
+    /* uint16_t topiclen = pp->ppayload - pp->phead; */
+    uint16_t topiclen = strlen(pp->phead);
+/************************add by alex****************************/
+    int var_headerLen;
+    int fixed_headerLen;
+    int packetLen;
+    /* ppayload不能占用 */
+    /* int msgLen = pp->pend - pp->ppayload; */
+    int msgLen = pp->pend - pp->phead - topiclen;
+
+    uint8_t *var_header=NULL;
+    uint8_t *fixed_header=NULL;
+    uint8_t fixedHeaderSize = 1;
+    uint16_t remainLen;
+    uint8_t *packet = NULL;
+    varc sendvarc;
+    /* GAgent_Printf(GAGENT_DEBUG, "topic len:%d, msgLen:%d, msglen:%d", topiclen, msgLen, pp->pend - pp->phead - topiclen); */
+/***************************************************************/	
+    /* fixed_header:type(1b), remainLen(varc) */
+    /* var_header:var_headerLen(varc), topic */
+    /* msg:data */
+    /* pp:topic(string), data */
+    if(qos == 1) {
+        qos_size = 2; // 2 bytes for QoS
+        qos_flag = MQTT_QOS1_FLAG;
+    }
+    else if(qos == 2) {
+        qos_size = 2; // 2 bytes for QoS
+        qos_flag = MQTT_QOS2_FLAG;
+    }
+    else if(qos == 0xFF)
+    {
+        /* 有附加数据 */
+    }
+
+    var_header = pp->phead - (2 + qos_size);
+    if(var_header < pp->allbuf)
+    {
+        return -1;
+    }
+
+    var_headerLen = topiclen + 2 + qos_size;
+/******************************************************************/
+    /* memset(var_header, 0, var_headerLen); */
+    var_header[0] = topiclen >> 8;
+    var_header[1] = topiclen & 0xFF;
+    if(qos_size)
+    {
+        memcpy(var_header + 2, var_header + 2 + qos_size, topiclen);
+        var_header[topiclen + 2] = broker->seq>>8;
+        var_header[topiclen + 3] = broker->seq&0xFF;
+        if(message_id) { // Returning message id
+            *message_id = broker->seq;
+        }
+        broker->seq++;
+    }
+
+    /**********************add by alex**************************************/
+    if(qos == 0xFF)
+    {
+        remainLen = var_headerLen + totallen;
+    }
+    else
+    {
+        remainLen = var_headerLen + msgLen;
+    }
+
+    /***********************************************************************/
+    sendvarc = Tran2varc(remainLen);
+    fixedHeaderSize += sendvarc.varcbty;
+    /***********************add by alex *******************/
+    fixed_headerLen = fixedHeaderSize;
+
+    fixed_header = var_header - fixed_headerLen;
+    if( fixed_header < pp->allbuf )
+    {
+        return -1;
+    }
+    /******************************************************/
+
+    /* Message Type, DUP flag, QoS level, Retain */
+    fixed_header[0] = MQTT_MSG_PUBLISH | qos_flag;
+    if(retain) {
+        fixed_header[0] |= MQTT_RETAIN_FLAG;
+    }
+
+    memcpy(fixed_header + 1, sendvarc.var, sendvarc.varcbty);
+    pp->phead = fixed_header;
+    /**********************add by alex******************************/
+    /* packetLen = fixed_headerLen+var_headerLen+msgLen; */
+    packetLen = pp->pend - pp->phead;
+
+
+    /* Send the packet */
+    /* debugpacket(pp); */
+    if(broker->mqttsend(broker->socketid, pp->phead, packetLen ) < packetLen) {
+        return -1;
+    }
+    return 1;
+}
+#endif
 
 int mqtt_pubrel(mqtt_broker_handle_t* broker, uint16_t message_id) {
     uint8_t packet[4] = {

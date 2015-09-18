@@ -733,3 +733,29 @@ uint8 Http_Get3rdCloudInfo( int8 *szCloud3Name,int8 *szCloud3Info,uint8 *buf )
     return 1;
 }
 
+#define MCU_OTA_URL "/dev/ota/v4.1/latest"
+int32 http_querymcuota(int32 socketid, int8 *buf, int8 *host, int8 *pk, int8 *did, int8 *hardver, int8 *softver, int8 type)
+{
+    int32 ret=0;
+    uint8 *postBuf=NULL;
+    int8 *url = MCU_OTA_URL;
+    int8 Content[200]={0};
+    int32 ContentLen=0;
+    int32 totalLen=0;
+
+    sprintf(Content,"?hard_version=%s&soft_version=%s&product_key=%s&type=%d",
+            hardver, softver, pk, type);
+    ContentLen = strlen( Content );
+
+    snprintf( (char *)buf,400,"%s%s%s%s%s%s%s%s%s%s%s%s",
+              "GET ",url, Content, " HTTP/1.1", kCRLFNewLine,
+              "Host: ", host, kCRLFNewLine,
+              "Cache-Control: no-cache", kCRLFNewLine,
+              "Content-Type: application/x-www-form-urlencoded",kCRLFLineEnding
+        );
+    totalLen = strlen( (char *)buf );
+
+    ret = send( socketid,buf,totalLen,0 );
+
+    return 0;
+}

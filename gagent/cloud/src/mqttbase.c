@@ -126,7 +126,7 @@ int check_mqtt_subscribe( uint8_t *packet_bufferBUF,int packet_length, uint16_t 
  *			Add by Alex lin		2014-04-03
  *
  ***********************************************************/
-int PubMsg( mqtt_broker_handle_t* broker, const char* topic, char* Payload, int PayLen, int flag )
+int PubMsg_( mqtt_broker_handle_t* broker, const char* topic, char* Payload, int PayLen, int flag, void *extra )
 {
     uint16_t msg_id;
     int pubFlag=0;
@@ -134,10 +134,10 @@ int PubMsg( mqtt_broker_handle_t* broker, const char* topic, char* Payload, int 
     switch(	flag )
     {
     case 0:	
-        pubFlag = XPGmqtt_publish( broker,topic,Payload,PayLen,0 );
+        pubFlag = XPGmqtt_publish_( broker,topic,Payload,PayLen,0 );
         break;
-    case 1:	
-        pubFlag = XPGmqtt_publish_with_qos( broker,topic,Payload,PayLen,0,1,&msg_id);
+    case 1:
+        pubFlag = XPGmqtt_publish_with_qos_( broker,topic,Payload,PayLen,0,1,&msg_id, extra);
         // <<<<< PUBACK	
         /*
                         packet_length = MQTT_readPacket(g_stSocketRecBuffer,SOCKET_RECBUFFER_LEN);				            
@@ -151,6 +151,10 @@ int PubMsg( mqtt_broker_handle_t* broker, const char* topic, char* Payload, int 
                         }
         */
         break;
+    case 2:
+        /* 表示有附加数据，此时qos标志为0xff */
+        pubFlag = XPGmqtt_publish_with_qos_( broker,topic,Payload,PayLen,0, 0xFF, &msg_id, extra);
+        break;
     default:
         pubFlag=1;
         break;
@@ -158,3 +162,29 @@ int PubMsg( mqtt_broker_handle_t* broker, const char* topic, char* Payload, int 
 
     return pubFlag;
 }
+#if 1
+int PubMsg( mqtt_broker_handle_t* broker, ppacket pp, int flag, int totallen)
+{
+    uint16_t msg_id;
+    int pubFlag=0;
+
+    switch(flag)
+    {
+    case 0:
+        pubFlag = XPGmqtt_publish(broker, pp, 0);
+        break;
+    case 1:
+        pubFlag = XPGmqtt_publish_with_qos(broker, pp, 0, 1, 0, &msg_id);
+        break;
+    case 2:
+        /* 表示有附加数据，此时qos标志为0xff */
+        pubFlag = XPGmqtt_publish_with_qos( broker, pp, totallen, 0, 0xFF, &msg_id);
+        break;
+    default:
+        pubFlag=1;
+        break;
+    }
+
+    return pubFlag;
+}
+#endif

@@ -67,7 +67,7 @@ int32 Lan_TcpServerHandler(pgcontext pgc)
     {
         /* if nonblock, can be done in accept progress */
         newfd = Socket_accept(pgc->ls.tcpServerFd, &addr, (socklen_t *)&addrLen);
-        if( newfd<=0 )
+        if( newfd < 0 )
         {
             GAgent_Printf( GAGENT_ERROR,"Need to Restart Lan_TcpServer ");
             Lan_CreateTCPServer(&(pgc->ls.tcpServerFd), GAGENT_TCP_SERVER_PORT);
@@ -102,7 +102,7 @@ int32 Lan_tcpClientDataHandle(pgcontext pgc, uint32 channel,
 
     if(recDataLen <= 0)
     {
-        if(pgc->ls.tcpClient[channel].fd > 0)
+        if(pgc->ls.tcpClient[channel].fd >= 0)
         {
             if(pgc->ls.tcpClientNums > 0 && 
                 (LAN_CLIENT_LOGIN_SUCCESS == pgc->ls.tcpClient[channel].isLogin))
@@ -444,7 +444,7 @@ void GAgent_Lan_SendDevInfo(pgcontext pgc,ppacket pTxBuf,int32 clientIndex)
          pTxBuf->phead[offset+i]=pgc->mcu.product_key[i];
     offset +=32;
 
-    if(pgc->ls.tcpClient[clientIndex].fd > 0 )
+    if(pgc->ls.tcpClient[clientIndex].fd >= 0 )
     {
         send(pgc->ls.tcpClient[clientIndex].fd, pTxBuf->phead,offset, 0); 
     }
@@ -494,7 +494,7 @@ void Local_Ack2TcpClient(pgcontext pgc, uint32 channel)
     int16 cmdWord = GAGENT_LAN_REPLY_TEST;
     memset(tmpBuf,0,sizeof(tmpBuf));
     
-    if(pgc->ls.tcpClient[channel].fd > 0)
+    if(pgc->ls.tcpClient[channel].fd >= 0)
     {
         //protocolver
         *(uint32 *)tmpBuf = htonl(GAGENT_PROTOCOL_VERSION);

@@ -254,7 +254,7 @@ int32 GAgent_Local_WaitDataReady(pgcontext pgc, uint32 timeoutS, uint32 timeoutM
 
     FD_ZERO( &(pgc->rtinfo.readfd) );
 
-    if( pgc->rtinfo.local.uart_fd>0 )
+    if( pgc->rtinfo.local.uart_fd >= 0 )
     {
         FD_SET( pgc->rtinfo.local.uart_fd,&(pgc->rtinfo.readfd));
         maxFd = pgc->rtinfo.local.uart_fd + 1;

@@ -35,6 +35,7 @@ void GAgent_WiFiInit( pgcontext pgc )
         else
         {
             GAgent_Printf( GAGENT_CRITICAL,"In AP mode");
+            GAgent_DevCheckWifiStatus( WIFI_MODE_ONBOARDING,1 );
             tempWiFiStatus |=WIFI_MODE_AP;
             tempWiFiStatus |= GAgent_DRV_WiFi_SoftAPModeStart( pgc->minfo.ap_name,AP_PASSWORD,tempWiFiStatus );
         }
@@ -164,7 +165,7 @@ uint8 GAgentFindTestApHost( NetHostList_str *pAplist )
 {
     int16 i=0;
     int8 apNum=0,ret=0;
-
+    GAgent_Printf( GAGENT_DEBUG,"scan wifi list and find the test ap host");
     for( i=0;i<pAplist->ApNum;i++ )
     {
         if( 0==memcmp(pAplist->ApList[i].ssid,(int8 *)GAGENT_TEST_AP1,strlen(GAGENT_TEST_AP1)) )
@@ -197,14 +198,23 @@ uint8 GAgentFindTestApHost( NetHostList_str *pAplist )
            ret = (ret%2)+1; 
         break;
         default:
+            GAgent_Printf( GAGENT_DEBUG,"can't find the test ap host from scan wifi list!");
         ret =0;
         break;
     }
 
-    if(NULL !=  pAplist->ApList)
-            free( pAplist->ApList); 
-            
     return ret;
+}
+/****************************************************************
+FunctionName    :   GAgent_EnterNullMode
+Description     :   GAgent Stop ap mode and status mode
+Add by Alex.lin         --2015-09-07
+****************************************************************/
+void GAgent_EnterNullMode( pgcontext pgc )
+{
+     GAgent_Printf( GAGENT_INFO,"%s %d",__FUNCTION__,__LINE__ );
+     GAgent_DRVWiFi_APModeStop( pgc );
+     GAgent_DRVWiFi_StationDisconnect( );
 }
 void  GAgent_WiFiEventTick( pgcontext pgc,uint32 dTime_s )
 {
@@ -300,6 +310,7 @@ void  GAgent_WiFiEventTick( pgcontext pgc,uint32 dTime_s )
             if( gagentOnboardingTime <= 0 )
             { 
                 GAgent_Printf( GAGENT_INFO,"WIFI_MODE_ONBOARDING Time out ...");
+                GAgent_EnterNullMode( pgc );
             }
             else
             {
@@ -396,6 +407,7 @@ void  GAgent_WiFiEventTick( pgcontext pgc,uint32 dTime_s )
                 cnt=0;
                 GAgent_SetWiFiStatus( pgc,WIFI_MODE_TEST,0 );
                 GAgent_DRVWiFiStopScan( );
+                GAgent_EnterNullMode( pgc );
                 GAgent_Printf( GAGENT_INFO,"Exit Test Mode...");
             }
 
@@ -406,6 +418,11 @@ void  GAgent_WiFiEventTick( pgcontext pgc,uint32 dTime_s )
                 GAgent_DRVWiFiStartScan();
                 GAgent_Printf( GAGENT_INFO,"IN TEST MODE...");
             }
+            /*********************************************************************
+            /           ！！！特别注意
+            /aplist 内存空间在底层各个平台申请和释放,上层不可以释放该指针
+            /
+            *********************************************************************/
             aplist = GAgentDRVWiFiScanResult( aplist );
             if( NULL==aplist )
             {
@@ -494,6 +511,7 @@ void  GAgent_WiFiEventTick( pgcontext pgc,uint32 dTime_s )
             {
                 GAgent_Printf( GAGENT_CRITICAL,"free xpg aplist...");
                 free( (pgc->rtinfo.aplist.ApList) );
+                pgc->rtinfo.aplist.ApList=NULL;   
             }
             if( pAplist->ApNum>0 )
             {
@@ -516,14 +534,23 @@ void  GAgent_WiFiEventTick( pgcontext pgc,uint32 dTime_s )
     }
     if( (gagentWiFiStatus&WIFI_MODE_ONBOARDING)==WIFI_MODE_ONBOARDING )
     {
-        if( gagentOnboardingTime>0 )
+        if( (gagentWiFiStatus&WIFI_MODE_TEST)==WIFI_MODE_TEST )
         {
-            gagentOnboardingTime--;
+            GAgent_Printf( GAGENT_INFO," GAgent in WIFI_MODE_TEST|WIFI_MODE_ONBOARDING !!! ");
         }
         else
         {
-            GAgent_DevCheckWifiStatus( WIFI_MODE_ONBOARDING,0 );
-            GAgent_Printf( GAGENT_DEBUG,"file:%s function:%s line:%d ",__FILE__,__FUNCTION__,__LINE__ );
+            GAgent_Printf( GAGENT_INFO,"GAGENT_ONBOARDING_TIME = %d",gagentOnboardingTime );
+            if( gagentOnboardingTime>0 )
+            {
+                gagentOnboardingTime--;
+            }
+            else
+            {
+                GAgent_DevCheckWifiStatus( WIFI_MODE_ONBOARDING,0 );
+                GAgent_Printf( GAGENT_INFO,"GAGENT_ONBOARDING_TIME Time out!");
+                GAgent_Printf( GAGENT_DEBUG,"file:%s function:%s line:%d ",__FILE__,__FUNCTION__,__LINE__ );
+            }
         }
         gagentWiFiStatus = ( (pgc->rtinfo.GAgentStatus)&(LOCAL_GAGENTSTATUS_MASK) ) ;
     }

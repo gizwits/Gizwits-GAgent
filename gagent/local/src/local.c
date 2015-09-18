@@ -394,6 +394,7 @@ void Local_ExtractInfo(pgcontext pgc, ppacket pRxBuf)
 
     pTime = (u16*)&Rxbuf[pos];
     pgc->mcu.passcodeEnableTime = ntohs(*pTime);
+    pgc->mcu.passcodeTimeout = pgc->mcu.passcodeEnableTime;
     pos+=2;
 
 
@@ -408,8 +409,8 @@ void Local_ExtractInfo(pgcontext pgc, ppacket pRxBuf)
 
     if( strcmp( (int8 *)pgc->mcu.product_key,pgc->gc.old_productkey )!=0 )
     {
-        GAgent_UpdateInfo( pgc,pgc->mcu.product_key );
         GAgent_Printf( GAGENT_INFO,"2 MCU old product_key:%s.",pgc->gc.old_productkey);
+        GAgent_UpdateInfo( pgc,pgc->mcu.product_key );
     }
 }
 /****************************************************************
@@ -625,11 +626,47 @@ void GAgent_LocalTick( pgcontext pgc,uint32 dTime_s )
             pgc->rtinfo.local.oneShotTimeout = 0;
             pgc->rtinfo.local.timeoutCnt++;
             GAgent_Printf(GAGENT_CRITICAL,"Local ping...");
+            resetPacket(pgc->rtinfo.Txbuf);
             GAgent_LocalDataWriteP0( pgc,pgc->rtinfo.local.uart_fd, pgc->rtinfo.Txbuf,WIFI_PING2MCU );
         }
     }
 }
+void GAgent_BigDataTick( pgcontext pgc )
+{
+    int32 ret=0;
+    /* 发送文件接收信号 */
+    if(pgc->rtinfo.local_send_ready_signal_flag)
+    {
+        pgc->rtinfo.local_send_ready_signal_flag = 0;
+        /* MBM 需要填充内容，包括分片大小等。目前可忽略 */
+        ret = GAgent_LocalDataWriteP0(pgc, pgc->rtinfo.local.uart_fd, pgc->rtinfo.Txbuf, MCU_READY_RECV_FIRMWARE);
+        if(RET_SUCCESS == ret)
+        {
+            /* 发送成功，进入接收模式 */
+            pgc->rtinfo.file.lastrecv = GAgent_GetDevTime_S();
+        }
+        else
+        {
+            /* 发送失败，取消接收 */
+            resetfile(&(pgc->rtinfo.file));
+        }
+    }
 
+    if(pgc->rtinfo.file.using == 1)
+    {
+        /* 大文件传输超时检测 */
+        if((GAgent_GetDevTime_S() - pgc->rtinfo.file.lastrecv)
+           > FILE_TRANSFER_TIMEOUT)
+        {
+            throwgabage(pgc, &pgc->rtinfo.file);
+            resetfile(&(pgc->rtinfo.file));
+            /* 发送失败命令 */
+            resetPacket(pgc->rtinfo.Txbuf);
+            GAgent_LocalDataWriteP0(pgc,pgc->rtinfo.local.uart_fd, pgc->rtinfo.Txbuf, GAGENT_STOP_SEND);
+
+        }
+    }
+}
 void GAgent_Local_ErrHandle(pgcontext pgc, ppacket pRxbuf)
 {
     uint8 cmd;
@@ -685,6 +722,8 @@ uint32 GAgent_LocalDataHandle( pgcontext pgc,ppacket Rxbuf,int32 RxLen /*,ppacke
     int8 MD5[33] = {0};
     int8 MD5len;
     int i;
+    int remlen;
+    
     if( RxLen>0 )
     {
         localRxbuf = Rxbuf->phead;
@@ -695,7 +734,7 @@ uint32 GAgent_LocalDataHandle( pgcontext pgc,ppacket Rxbuf,int32 RxLen /*,ppacke
         if( checksum!=localRxbuf[RxLen-1] )
         {
             GAgent_Printf( GAGENT_ERROR,"local data cmd=%02x checksum error,calc sum:0x%x,expect:0x%x !",
-                cmd, checksum, localRxbuf[RxLen-1] );
+                           cmd, checksum, localRxbuf[RxLen-1] );
             GAgent_DebugPacket(Rxbuf->phead, RxLen);
             GAgent_Local_ErrHandle( pgc, Rxbuf);
             return 0;
@@ -706,6 +745,12 @@ uint32 GAgent_LocalDataHandle( pgcontext pgc,ppacket Rxbuf,int32 RxLen /*,ppacke
         {
             case MCU_REPORT:
                 Local_Ack2MCU( pgc->rtinfo.local.uart_fd,sn,cmd+1 );
+                if(pgc->rtinfo.file.using == 1)
+                {
+                    ret = 0;
+                    break;
+                }
+
                 Rxbuf->type = SetPacketType( Rxbuf->type,LOCAL_DATA_IN,1 );
                 ParsePacket( Rxbuf );
                 setChannelAttrs(pgc, NULL, NULL, 1);
@@ -719,6 +764,8 @@ uint32 GAgent_LocalDataHandle( pgcontext pgc,ppacket Rxbuf,int32 RxLen /*,ppacke
                 break;
             case MCU_RESET_WIFI:
                 Local_Ack2MCU( pgc->rtinfo.local.uart_fd,sn,cmd+1 );
+                pgc->gc.flag |= XPG_CFG_FLAG_CONFIG_AP;
+                GAgent_DevSaveConfigData( &(pgc->gc) );
                 GAgent_Clean_Config(pgc);
                 sleep(2);
                 GAgent_DevReset();
@@ -734,6 +781,11 @@ uint32 GAgent_LocalDataHandle( pgcontext pgc,ppacket Rxbuf,int32 RxLen /*,ppacke
             case MCU_CTRL_CMD_ACK:
                 if(RET_SUCCESS == Local_CheckAck(pgc, cmd, sn))
                 {
+                    if(pgc->rtinfo.file.using == 1)
+                    {
+                        ret = 0;
+                        break;
+                    }
                     /* out to app and cloud, for temp */
                     Rxbuf->type = SetPacketType( Rxbuf->type,LOCAL_DATA_IN,1 );
                     ParsePacket( Rxbuf );
@@ -781,6 +833,17 @@ uint32 GAgent_LocalDataHandle( pgcontext pgc,ppacket Rxbuf,int32 RxLen /*,ppacke
                 Local_Ack2MCUwithP0( Rxbuf, pgc->rtinfo.local.uart_fd, sn, MCU_REQ_GSERVER_TIME_ACK );
                 ret = 0;
                 break;
+            case MCU_NEED_UPGRADE:
+                /* 大文件传输标志 */
+                Local_Ack2MCU( pgc->rtinfo.local.uart_fd,sn, MCU_NEED_UPGRADE_ACK);
+                /* 做准备 */
+                /* 记录文件数据 */
+                /* 回复准备信号 */
+                Rxbuf->type = SetPacketType( Rxbuf->type,LOCAL_DATA_IN,1 );
+                ParsePacket( Rxbuf );
+                parsefileinfo(&(pgc->rtinfo.file), Rxbuf);
+                pgc->rtinfo.local_send_ready_signal_flag = 1;
+                break;
             case MCU_NEED_UPGRADE_ACK:
                 Local_CheckAck(pgc, cmd, sn);
                 ret = 0 ;
@@ -789,7 +852,9 @@ uint32 GAgent_LocalDataHandle( pgcontext pgc,ppacket Rxbuf,int32 RxLen /*,ppacke
                 Local_Ack2MCU( pgc->rtinfo.local.uart_fd, sn, MCU_READY_RECV_FIRMWARE_ACK );
                 MD5len = (localRxbuf[8]<<8) + localRxbuf[8+1];
                 for( i=0; i<MD5len; i++ )
+                {
                     MD5[i] = localRxbuf[8+2+i];
+                }
                 if( strcmp(pgc->mcu.MD5, MD5) )
                 {
                     GAgent_Printf(GAGENT_WARNING,"MD5 match failed!\n");
@@ -798,6 +863,7 @@ uint32 GAgent_LocalDataHandle( pgcontext pgc,ppacket Rxbuf,int32 RxLen /*,ppacke
                 {
                     GAgent_Printf(GAGENT_CRITICAL,"start send firmware to MCU!\n");
                     piecelen = (localRxbuf[8+2+MD5len]<<8) + localRxbuf[8+2+MD5len+1];
+                    pgc->mcu.isBusy = 0;
                     if( RET_SUCCESS == GAgent_LocalSendUpgrade(pgc,pgc->rtinfo.local.uart_fd,
                                         pgc->rtinfo.Txbuf, piecelen, GAGENT_SEND_UPGRADE) )
                     {
@@ -810,13 +876,82 @@ uint32 GAgent_LocalDataHandle( pgcontext pgc,ppacket Rxbuf,int32 RxLen /*,ppacke
                 }
                 ret = 0;
                 break;
+            case MCU_READY_RECV_FIRMWARE_ACK:
+                Local_CheckAck(pgc, cmd, sn);
+                ret = 0 ;
+                /* 切入文件传输模式 */
+                pgc->rtinfo.file.using = 1;
+                break;
+            case GAGENT_SEND_UPGRADE:
+
+                AS;
+                Local_Ack2MCU( pgc->rtinfo.local.uart_fd, sn, GAGENT_SEND_UPGRADE_ACK );
+                if(pgc->rtinfo.file.using != 1)
+                {
+                    /* 发送时机不对，中止发送 */
+                    pgc->mcu.isBusy = 0;
+                    GAgent_Printf(GAGENT_DEBUG, "SYNCFILE:not in process, stop send");
+                    GAgent_LocalDataWriteP0(pgc,pgc->rtinfo.local.uart_fd, pgc->rtinfo.Txbuf, GAGENT_STOP_SEND);
+                }
+
+                setChannelAttrs(pgc, NULL, NULL, 1);
+                /* 收到大文件数据 */
+                /* 处理数据流 */
+                Rxbuf->type = SetPacketType( Rxbuf->type,LOCAL_DATA_IN,1 );
+                ParsePacket( Rxbuf );
+                remlen = pushfiledata(&(pgc->rtinfo.file), Rxbuf);
+                /* 传输失败 */
+                if(RET_FAILED == syncfile(pgc, &(pgc->rtinfo.file)))
+                {
+                    throwgabage(pgc, &pgc->rtinfo.file);
+                    resetfile(&(pgc->rtinfo.file));
+                    /* 发送失败命令 */
+                    resetPacket(pgc->rtinfo.Txbuf);
+                    GAgent_LocalDataWriteP0(pgc,pgc->rtinfo.local.uart_fd, pgc->rtinfo.Txbuf, GAGENT_STOP_SEND);
+                }
+                else
+                {
+                    pgc->rtinfo.file.lastpiece = pgc->rtinfo.file.currentpiece;
+                    pgc->rtinfo.file.lastrecv = GAgent_GetDevTime_S();
+                }
+
+                /* 文件传输完成，正常结束 */
+                if(remlen <= 0)
+                {
+                    GAgent_Printf(GAGENT_DEBUG, "send file done");
+                    resetfile(&(pgc->rtinfo.file));
+                    /* 发送成功命令 */
+                }
+                break;
             case GAGENT_SEND_UPGRADE_ACK:
                 Local_CheckAck(pgc, cmd, sn);
                 ret = 0 ;
                 break;
+            case GAGENT_STOP_SEND:
+                Local_Ack2MCU( pgc->rtinfo.local.uart_fd, sn, GAGENT_STOP_SEND_ACK );
+                /* 发送中止 */
+                /* 关闭文件传输 */
+                throwgabage(pgc, &pgc->rtinfo.file);
+                resetfile(&(pgc->rtinfo.file));
+                break;
             case GAGENT_STOP_SEND_ACK:
                 Local_CheckAck(pgc, cmd, sn);
                 ret = 0 ;
+                break;
+            case MCU_QUERY_WIFI_INFO:
+                resetPacket( pgc->rtinfo.Txbuf );
+                GAgent_sendmoduleinfo( pgc );
+                Local_Ack2MCUwithP0( pgc->rtinfo.Txbuf, pgc->rtinfo.local.uart_fd, sn, MCU_QUERY_WIFI_INFO_ACK );
+                break;
+            case MCU_TRANSCTION_REQUEST:
+                Local_Ack2MCU( pgc->rtinfo.local.uart_fd, sn, MCU_TRANSCTION_REQUEST_ACK);
+                Rxbuf->type = SetPacketType( Rxbuf->type,LOCAL_DATA_IN,1 );
+                ParsePacket(Rxbuf);
+                trans_dealmcutransction(pgc, Rxbuf);
+                break;
+            case TEST_CMD:
+                /* 测试命令 */
+                test_cloud_querymcuota(pgc);
                 break;
             default:
                 ret = 0;
@@ -825,7 +960,7 @@ uint32 GAgent_LocalDataHandle( pgcontext pgc,ppacket Rxbuf,int32 RxLen /*,ppacke
         //...
     }
 
-  return ret;
+    return ret;
 }
 void GAgent_Local_Handle( pgcontext pgc,ppacket Rxbuf,int32 length )
 {

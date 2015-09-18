@@ -217,7 +217,7 @@ static void Lan_Upload_AllApp(pgcontext pgc, ppacket pTxBuf)
     
     for(i = 0; i < LAN_TCPCLIENT_MAX; i++)
     {
-        if(pgc->ls.tcpClient[i].fd > 0 && 
+        if(pgc->ls.tcpClient[i].fd >= 0 && 
             LAN_CLIENT_LOGIN_SUCCESS == pgc->ls.tcpClient[i].isLogin)
         {
             send(pgc->ls.tcpClient[i].fd, pTxBuf->phead, pTxBuf->pend - pTxBuf->phead, 0);
@@ -331,10 +331,6 @@ void GAgent_Lan_SendTcpData(pgcontext pgc,ppacket pTxBuf)
     sn = pgc->rtinfo.stChannelAttrs.lanClient.sn;
 
     Lan_sendTcpData(pgc, fd, cmd, sn, pTxBuf);
-    if(GAGENT_LAN_CMD_CTL_93 == cmd)
-    {
-        Lan_sendTcpData(pgc, fd, GAGENT_LAN_CMD_TRANSMIT_91, sn, pTxBuf);
-    }
     
     return ;
 }

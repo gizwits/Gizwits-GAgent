@@ -12,7 +12,9 @@ uint32 GAgent_GetDevTime_S( void );
 int8 GAgent_DevGetMacAddress( uint8* szmac );
 void GAgent_DevLED_Red( uint8 onoff );
 void GAgent_DevLED_Green( uint8 onoff );
+uint32 GAgent_sendmoduleinfo( pgcontext pgc );
 
+int8 Dev_GAgentGetOldConfigData( GAgent_OldCONFIG_S *p_oldgc );
 uint32 GAgent_DevGetConfigData( gconfig *pConfig );
 uint32 GAgent_DevSaveConfigData( gconfig *pConfig);
 void GAgent_LocalDataIOInit( pgcontext pgc );

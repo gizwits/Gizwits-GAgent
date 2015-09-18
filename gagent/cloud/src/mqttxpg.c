@@ -146,6 +146,14 @@ int32 Mqtt_SubLoginTopic( mqtt_broker_handle_t *LoginBroker,pgcontext pgc,int16 
     return 0;
 }
 
+int32 Mqtt_SendPiece(pgcontext pgc, ppacket pp)
+{
+    int len = 0;
+    len = g_stMQTTBroker.mqttsend(g_stMQTTBroker.socketid, pp->ppayload, pp->pend - pp->ppayload);
+    GAgent_Printf(GAGENT_DEBUG, "Mqtt_SendPiece sent %d", len);
+    return len;
+}
+
 /***********************************************************
  *
  *   return :    0 success ,1 error
@@ -199,7 +207,7 @@ void MQTT_HeartbeatTime( void )
 int32 Mqtt_IntoRunning( pgcontext pgc )
 {
     mqtt_ping(&g_stMQTTBroker);
-    Mqtt_ReqOnlineClient();
+    Mqtt_ReqOnlineClient(pgc);
     return 0;
 }
 // 发送日志
@@ -226,11 +234,16 @@ void Log2Cloud( pgcontext pgc )
                             other fail.
         Add by Alex.lin     --2015-03-17
 ********************************************************************/
-int32 MQTT_SenData( pgcontext pgc, int8 *szDID, ppacket pbuf,/*uint8 *buf,*/ int32 buflen )
+int32 MQTT__SenData( pgcontext pgc, int8 *szDID, ppacket pbuf,/*uint8 *buf,*/ int32 buflen )
 {
+    /* 在传半包数据时，需要使用特殊的hack方式 */
+    /* 在这种方式里，topic中len字段为整个包长度， */
+    /* 向下调用仍然使用实际数据长度 */
+    /*  */
     uint8 *sendpack=NULL;
     int32 i=0,sendpacklen=0,headlen=0;
     int16 varlen=0;
+    int32 totallen = 0;
     volatile varc sendvarc;
     int8 msgtopic[64]= {0};
     int32 didlen=0;
@@ -244,6 +257,12 @@ int32 MQTT_SenData( pgcontext pgc, int8 *szDID, ppacket pbuf,/*uint8 *buf,*/ int
     if(didlen!=22)
         return -1;
     
+    if( ((pgc->rtinfo.GAgentStatus)&WIFI_CLOUD_CONNECTED)  != WIFI_CLOUD_CONNECTED )
+    {
+        GAgent_Printf( GAGENT_INFO,"GAgent not in WIFI_CLOUD_CONNECTED,can't send data to cloud ");
+        return -1;
+    }
+
     memcpy( msgtopic,"dev2app/",strlen("dev2app/"));
     pos += strlen("dev2app/");
     memcpy( msgtopic+strlen("dev2app/"),szDID,didlen );
@@ -260,17 +279,30 @@ int32 MQTT_SenData( pgcontext pgc, int8 *szDID, ppacket pbuf,/*uint8 *buf,*/ int
         }
     }
     msgtopic[pos] = '\0';
-    
-    //protocolVer(4B)+varLen(1~4B)+flag(1B)+cmd(2B)+P0
-    varlen = 1+2+buflen;
+    varlen = 1 + 2;
     if(0x0093 == cmd || 0x0094 == cmd)
     {
         varlen += sizeof(sn);
     }
-    sendvarc=Tran2varc(varlen);
-    sendpacklen = 4+sendvarc.varcbty+varlen;
-    headlen = sendpacklen-buflen;
-    
+
+    // protocolVer(4B)+varLen(1~4B)+/ flag(1B)+cmd(2B)+P0 /
+    /* 关键实现。在单次传输过程中，此接口只能被调用一次，余下数据需依据此标志使用其他接口 */
+    /* hacked */
+    if(pgc->rtinfo.file.using == 1)
+    {
+        totallen = varlen + pgc->rtinfo.file.totalsize;
+    }
+    else
+    {
+        totallen = varlen + buflen;
+    }
+    varlen += buflen;
+    /* varlen = 1+2+buflen; */
+    /* sendvarc=Tran2varc(varlen); */
+    sendvarc = Tran2varc(totallen);
+    sendpacklen = 4 + sendvarc.varcbty + varlen;
+    headlen = sendpacklen - buflen;
+
     sendpack = ( (pbuf->ppayload)-headlen );
     //protocolVer
     sendpack[0] = 0x00;
@@ -292,23 +324,164 @@ int32 MQTT_SenData( pgcontext pgc, int8 *szDID, ppacket pbuf,/*uint8 *buf,*/ int
     }
 
     GAgent_Printf(GAGENT_DEBUG,"------SEND TO Cloud ------\r\n");
-    for(i=0;i<sendpacklen;i++)
-        GAgent_Printf(GAGENT_DUMP," %02X",sendpack[i] );
-    
-    PubMsg( &g_stMQTTBroker,msgtopic,(int8 *)sendpack,sendpacklen,0 );
+    /* for(i=0;i<sendpacklen;i++) */
+    /*     GAgent_Printf(GAGENT_DUMP," %02X",sendpack[i] ); */
+    /* 添加头部字段的长度。当前值为payload的总长度 */
+    totallen += 4;
+    totallen += sendvarc.varcbty;
+
+    if(pgc->rtinfo.file.using == 1)
+    {
+        PubMsg_( &g_stMQTTBroker,msgtopic,(int8 *)sendpack,sendpacklen, 2, (void*)totallen);
+    }
+    else
+    {
+        PubMsg_( &g_stMQTTBroker,msgtopic,(int8 *)sendpack,sendpacklen,0, 0);
+    }
 
     return 0;
 }
+#if 1
+int32 MQTT_SendData( pgcontext pgc, int8 *szDID, ppacket pbuf, int32 buflen )
+{
+    /* 在传半包数据时，需要使用特殊的hack方式 */
+    /* 在这种方式里，topic中len字段为整个包长度， */
+    /* 向下调用仍然使用实际数据长度 */
+    /*  */
+    uint8 *sendpack=NULL;
+    int32 i=0,sendpacklen=0,headlen=0;
+    int16 varlen=0;
+    int32 totallen = 0;
+    volatile varc sendvarc;
+    int8 msgtopic[64]= {0};
+    int32 didlen=0;
+    uint16 cmd = pgc->rtinfo.stChannelAttrs.cloudClient.cmd;
+    int32 sn = pgc->rtinfo.stChannelAttrs.cloudClient.sn;
+    int8 *clienid = pgc->rtinfo.stChannelAttrs.cloudClient.phoneClientId;
+    uint8 pos = 0;
+    int32 clienIdLen;
+
+    didlen = strlen(szDID);
+    if(didlen!=22)
+    {
+        return -1;
+    }
+
+    if( ((pgc->rtinfo.GAgentStatus)&WIFI_CLOUD_CONNECTED)  != WIFI_CLOUD_CONNECTED )
+    {
+        GAgent_Printf( GAGENT_INFO,"GAgent not in WIFI_CLOUD_CONNECTED,can't send data to cloud ");
+        return -1;
+    }
+
+    varlen = 1 + 2;
+    if(0x0093 == cmd || 0x0094 == cmd)
+    {
+        varlen += sizeof(sn);
+    }
+
+    /* protocolVer(4B)+varLen(1~4B)+/ flag(1B)+cmd(2B)+P0 / */
+    /* 关键实现。在单次传输过程中，此接口只能被调用一次，余下数据需依据此标志使用其他接口 */
+    /* hacked */
+    if(pgc->rtinfo.file.using == 1)
+    {
+        totallen = varlen + pgc->rtinfo.file.totalsize;
+    }
+    else
+    {
+        totallen = varlen + buflen;
+    }
+    varlen += buflen;
+
+    sendvarc = Tran2varc(totallen);
+    sendpacklen = 4 + sendvarc.varcbty + varlen;
+    headlen = sendpacklen - buflen;
+
+    sendpack = ( (pbuf->ppayload)-headlen );
+    /* 修改后，会导致0x0091命令识别长度错误 */
+    /* pbuf->ppayload = sendpack; */
+    //protocolVer
+    sendpack[0] = 0x00;
+    sendpack[1] = 0x00;
+    sendpack[2] = 0x00;
+    sendpack[3] = 0x03;
+    //varLen
+    for(i=0;i<sendvarc.varcbty;i++)
+    {
+        sendpack[4+i] = sendvarc.var[i];
+    }
+     //flag   
+    sendpack[4+sendvarc.varcbty] = 0x00;
+    //CMD
+    *(uint16 *)&sendpack[4+sendvarc.varcbty+1] = htons(cmd);
+    if(0x0093 == cmd || 0x0094 == cmd)
+    {
+        *(int32 *)&sendpack[4+sendvarc.varcbty+1 + 2] = htonl(sn);
+    }
+    /* sendpack--; */
+    /* *sendpack = 0; */
+    memcpy( msgtopic,"dev2app/",strlen("dev2app/"));
+    pos += strlen("dev2app/");
+    memcpy( msgtopic+strlen("dev2app/"),szDID,didlen );
+    pos += didlen;
+    if(0x0094 == cmd)
+    {
+        clienIdLen = strlen( (const int8 *)clienid);
+        if(clienIdLen > 0)
+        {
+            msgtopic[pos] = '/';
+            pos++;
+            memcpy( msgtopic+pos,clienid,clienIdLen );
+            pos+=clienIdLen;
+        }
+    }
+    msgtopic[pos] = '\0';
+    sendpack -= pos;
+    memcpy(sendpack, msgtopic, pos);
+    GAgent_Printf(GAGENT_DEBUG,"------SEND TO Cloud ------\r\n");
+    /* for(i=0;i<sendpacklen;i++) */
+    /*     GAgent_Printf(GAGENT_DUMP," %02X",sendpack[i] ); */
+    /* 添加头部字段的长度。当前值为payload的总长度 */
+    totallen += 4;
+    totallen += sendvarc.varcbty;
+    pbuf->phead = sendpack;
+    if(pgc->rtinfo.file.using == 1)
+    {
+        PubMsg( &g_stMQTTBroker, pbuf, 2, totallen);
+    }
+    else
+    {
+        PubMsg( &g_stMQTTBroker,pbuf, 0, 0);
+    }
+
+
+    return 0;
+}
+#endif
+
 
 /********************************************************************
  *
  *  FUNCTION   : Mqtt send request packbag to server ask online client
  *             add by alex.lin --2014-12-11
  ********************************************************************/
-void Mqtt_ReqOnlineClient(void)
+void Mqtt_ReqOnlineClient(pgcontext pgc)
 {
     char req_buf[6] = {0x00,0x00,0x00,0x03,0x02,0x0f};
-    PubMsg( &g_stMQTTBroker,"cli2ser_req",req_buf,6,0);	
+    /* added */
+    ppacket pp = pgc->rtinfo.Txbuf;
+    uint8 *p = NULL;
+    resetPacket(pp);
+    p = pp->phead;
+    memcpy(p, "cli2ser_req", strlen("cli2ser_req"));
+    p += strlen("cli2ser");
+    pp->ppayload = p;
+
+    memcpy(p, req_buf, sizeof(req_buf));
+    p += sizeof(req_buf);
+    pp->pend = p;
+    PubMsg(&g_stMQTTBroker, pp, 0, 0);
+    /* end */
+    /* PubMsg( &g_stMQTTBroker,"cli2ser_req",req_buf,6,0, 0); */
 }
 /********************************************************************
  *
@@ -341,10 +514,13 @@ void Mqtt_ResOnlineClient( pgcontext pgc,char *buf,int32 buflen)
     GAgent_Printf(GAGENT_INFO,"wanclient_num = %d",wanclient_num );
     return ;
 }
-void Mqtt_Ack2Cloud( uint8 *pPhoneClient,uint8* szDID,uint8 *pData,uint32 datalen )
+void Mqtt_Ack2Cloud(pgcontext pgc, uint8 *pPhoneClient,uint8* szDID,uint8 *pData,uint32 datalen )
 {
     uint8 msgtopic[60]={0};
     uint8 pos=0;
+    ppacket pp = pgc->rtinfo.Txbuf;
+    uint8 *p = NULL;
+
     memcpy( msgtopic+pos,"dev2app/",strlen("dev2app/"));
     pos+=strlen( "dev2app/" );
     memcpy( msgtopic+pos,szDID,strlen((const int8 *)szDID) );
@@ -356,12 +532,22 @@ void Mqtt_Ack2Cloud( uint8 *pPhoneClient,uint8* szDID,uint8 *pData,uint32 datale
     msgtopic[pos] = '\0';
     GAgent_Printf( GAGENT_DEBUG,"msgtopic:%s  :len=%d",msgtopic,strlen( (const int8 *)msgtopic) );
 
+    resetPacket(pp);
+    p = pp->phead;
+    memcpy(p, msgtopic, pos);
+    p += pos;
+    pp->ppayload = p;
+    memcpy(p, pData, datalen);
+    p += datalen;
+    pp->pend = p;
+    PubMsg(&g_stMQTTBroker, pp, 0, 0);
     //TODO ack buf.
-    PubMsg( &g_stMQTTBroker,( const int8*)msgtopic,( int8* )pData,datalen,0 );
+    /* PubMsg( &g_stMQTTBroker,( const int8*)msgtopic,( int8* )pData,datalen,0, 0); */
     return ;
 }
 int32 Mqtt_DispatchPublishPacket( pgcontext pgc,u8 *packetBuffer,int32 packetLen )
 {
+    u8 firmwareType;
     u8 topic[128];
     int32 topiclen;
     u8 *pHiP0Data;
@@ -450,9 +636,14 @@ int32 Mqtt_DispatchPublishPacket( pgcontext pgc,u8 *packetBuffer,int32 packetLen
                 Mqtt_ResOnlineClient( pgc,(int8*)pHiP0Data, HiP0DataLen);
             break;
             case 0x0211:
-                //todo MCU OTA.
-                GAgent_Printf( GAGENT_DEBUG,"M2M cmd to check OTA!!! ");
-                GAgent_SetCloudConfigStatus( pgc,CLOUD_RES_GET_SOFTVER); 
+                firmwareType = pHiP0Data[6];
+                pgc->rtinfo.onlinePushflag = 1;
+                if(firmwareType >= OTATYPE_INVALID || 0 == firmwareType)
+                {
+                    GAgent_Printf( GAGENT_WARNING,"invalid firmware type!");
+                }
+                pgc->rtinfo.OTATypeflag = firmwareType;
+                GAgent_SetCloudConfigStatus( pgc,CLOUD_RES_GET_SOFTVER);  
             break;
             default:
             break;
