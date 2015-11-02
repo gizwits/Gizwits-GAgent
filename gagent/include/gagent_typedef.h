@@ -173,6 +173,7 @@ typedef struct _XPG_MCU
     uint8   product_key[PK_LEN+1];
     uint8   mcu_attr[MCU_MCUATTR_LEN];
     int8    MD5[32+1];
+    int8    mcu_firmware_type;
     localTxbufInfo TxbufInfo;   
 }XPG_MCU;
 
@@ -288,6 +289,7 @@ typedef struct runtimeinfo_t
     int local_send_ready_signal_flag;
     OTATYPE OTATypeflag;
     int8 onlinePushflag;
+    int8 stopSendFlag;
 }runtimeinfo, *pruntimeinfo;
 
 typedef struct modeinfo_t

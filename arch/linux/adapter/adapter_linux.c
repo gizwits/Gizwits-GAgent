@@ -484,14 +484,16 @@ int32 GAgent_StartUpgrade()
  remove("./ota.bin");
  return 0;
 }
-uint32 GAgent_ReadOTAFile( uint32 offset,int8* buf,uint32 len )
+/****************************************************************
+FunctionName    :   GAgent_ReadOTAFile
+Description     :   read file from flash
+return          :   =0 : read file complete  
+                      >0 : read success
+                      <0 : read failed
+****************************************************************/
+int32 GAgent_ReadOTAFile( uint32 offset,int8* buf,uint32 len )
 {
     return  GAgent_ReadFile( offset, buf, len );
-}
-uint32 GAgent_DeleteFirmware( int32 offset,int32 filelen )
-{
-    remove("./ota.bin");
-    return 0;
 }
 int32 GAgent_WIFIOTAByUrl( pgcontext pgc,int8 *szdownloadUrl )
 {

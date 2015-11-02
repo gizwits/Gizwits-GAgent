@@ -133,6 +133,7 @@ uint32 Http_ResGetFirmware( pgcontext pgc,int32 socketid )
     int offset = 0;
     uint8 *buf = NULL;
     int writelen = 0;
+    uint8 filename[100] = {0};
     MD5_CTX ctx;
 
     httpReceiveBuf = malloc(SOCKET_RECBUFFER_LEN);
@@ -164,7 +165,7 @@ uint32 Http_ResGetFirmware( pgcontext pgc,int32 socketid )
     // }
     Http_GetMD5( httpReceiveBuf,MD5,pgc->mcu.MD5 );
     Http_GetSV( httpReceiveBuf,(char *)pgc->mcu.soft_ver);
-  
+    pgc->mcu.mcu_firmware_type = Http_GetFileType(httpReceiveBuf);
     offset = 0;
     buf = httpReceiveBuf + headlen;
     writelen = SOCKET_RECBUFFER_LEN - headlen;

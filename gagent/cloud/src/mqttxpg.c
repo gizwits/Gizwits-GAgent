@@ -149,6 +149,12 @@ int32 Mqtt_SubLoginTopic( mqtt_broker_handle_t *LoginBroker,pgcontext pgc,int16 
 int32 Mqtt_SendPiece(pgcontext pgc, ppacket pp)
 {
     int len = 0;
+    if( ((pgc->rtinfo.GAgentStatus)&WIFI_CLOUD_CONNECTED)  != WIFI_CLOUD_CONNECTED )
+    {
+        GAgent_Printf( GAGENT_INFO,"GAgent not in WIFI_CLOUD_CONNECTED,can't send data to cloud ");
+        return RET_FAILED;
+    }
+
     len = g_stMQTTBroker.mqttsend(g_stMQTTBroker.socketid, pp->ppayload, pp->pend - pp->ppayload);
     GAgent_Printf(GAGENT_DEBUG, "Mqtt_SendPiece sent %d", len);
     return len;

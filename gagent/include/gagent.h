@@ -119,6 +119,7 @@ extern pgcontext pgContextData;
 
 /*For V4, GAgent waiting for MCU response of very CMD send by GAgent, Unit: ms*/
 #define MCU_ACK_TIME_MS    200
+#define MCU_ACK_BIGDATA_MS  (3*1000)
 
 #define GAGENT_CRITICAL    0x00
 #define GAGENT_ERROR       0X01
@@ -178,8 +179,8 @@ extern pgcontext pgContextData;
 #define MCU_READY_RECV_FIRMWARE    0x1B
 #define MCU_READY_RECV_FIRMWARE_ACK 0x1C
 
-#define GAGENT_SEND_UPGRADE     0x1D
-#define GAGENT_SEND_UPGRADE_ACK 0x1E
+#define GAGENT_SEND_BIGDATA     0x1D
+#define GAGENT_SEND_BIGDATA_ACK 0x1E
 
 #define GAGENT_STOP_SEND     0x1F
 #define GAGENT_STOP_SEND_ACK 0x20
@@ -192,6 +193,12 @@ extern pgcontext pgContextData;
 
 #define MCU_TRANSCTION_RESULT 0x25
 #define MCU_TRANSCTION_RESULT_ACK 0x26
+
+#define MCU_STOP_RECV_BIGDATA 0x27
+#define MCU_STOP_RECV_BIGDATA_ACK 0x28
+
+#define MCU_RESTART_GAGENT 0x29
+#define MCU_RESTART_GAGENT_ACK 0x2A
 
 #define TRANSCTION_OTA_CHECK 0x01
 #define TRANSCTION_OTA_CHECK_ACK 0x02

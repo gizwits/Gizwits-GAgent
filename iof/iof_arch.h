@@ -18,8 +18,7 @@ int8 Dev_GAgentGetOldConfigData( GAgent_OldCONFIG_S *p_oldgc );
 uint32 GAgent_DevGetConfigData( gconfig *pConfig );
 uint32 GAgent_DevSaveConfigData( gconfig *pConfig);
 void GAgent_LocalDataIOInit( pgcontext pgc );
-uint32 GAgent_ReadOTAFile( uint32 offset, int8* buf,uint32 len );
-uint32 GAgent_DeleteFirmware( int32 offset,int32 filelen );
+int32 GAgent_ReadOTAFile( uint32 offset,int8* buf,uint32 len );
 
 /*********Net event function************/
 void GAgent_OpenAirlink( int32 timeout_s );

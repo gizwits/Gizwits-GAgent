@@ -74,6 +74,11 @@ int syncfile(pgcontext pgc, pfdesc pf)
             break;
         case 1:
             ret = Mqtt_SendPiece(pgc, pf->data);
+            if(ret == RET_FAILED)
+            {
+                /* 云端发送故障，终止发送 */
+                return RET_FAILED;
+            }
             pf->recvsize += ret;
             break;
         default:
@@ -91,6 +96,10 @@ int syncfile(pgcontext pgc, pfdesc pf)
         if(ret == RET_SUCCESS)
         {
             pf->recvsize += i;
+        }
+        else
+        {
+            ret = RET_FAILED;
         }
 #if 0
         for(i = 2; i < pf->piececount; i++)

@@ -11,9 +11,10 @@ return 0 OTA SUCCESS
 */
 int32 GAgent_MCUOTAByUrl( pgcontext pgc,int8 *downloadUrl )
 {
+
     int32 ret = 0;
     int32 http_socketid = -1;
-    uint8 OTA_IP[32]={0};
+    int8 OTA_IP[32]={0};
     int8 *url = NULL;
     int8 *host = NULL;
     if( RET_FAILED == Http_GetHost( downloadUrl,&host,&url ) )
@@ -104,25 +105,9 @@ uint32 GAgent_Cloud_SendData( pgcontext pgc,ppacket pbuf,int32 buflen )
     
     if( isPacketTypeSet( pbuf->type,CLOUD_DATA_OUT ) == 1)
     {
-
         pbuf->type = SetPacketType( pbuf->type,CLOUD_DATA_OUT,0 );
-        
-        if(buflen == 0)
-        {
-            /* no payload */
-            if(0x0094 == cmd)
-            {
-                /* ack to cloud */
-                ret = MQTT_SendData( pgc, pgc->gc.DID, pbuf,buflen );
-            }
-        }
-        else
-        {
-            /* with payload */
-            ret = MQTT_SendData( pgc, pgc->gc.DID, pbuf,buflen );
-        }
+        ret = MQTT_SendData( pgc, pgc->gc.DID, pbuf,buflen );
         GAgent_Printf(GAGENT_INFO,"Send date to cloud :len =%d ,ret =%d",buflen,ret );
-        
     }
     return ret;
 }
@@ -141,6 +126,7 @@ int32 Cloud_InitSocket( int32 iSocketId,int8 *p_szServerIPAddr,int32 port,int8 f
 {
     int32 ret=0;
     int32 tempSocketId=0;
+    uint8 reconnectTime=0;
     ret = strlen( p_szServerIPAddr );
     
     if( ret<=0 || ret> 17 )
@@ -161,8 +147,15 @@ int32 Cloud_InitSocket( int32 iSocketId,int8 *p_szServerIPAddr,int32 port,int8 f
     }
     tempSocketId = iSocketId;
     GAgent_Printf(GAGENT_DEBUG, "New cloud socketID [%d]",iSocketId);
-    iSocketId = GAgent_connect( iSocketId, port, p_szServerIPAddr,flag );
-
+    while( reconnectTime<3 )
+    {
+        iSocketId = GAgent_connect( iSocketId, port, p_szServerIPAddr,flag );
+        if( iSocketId>=0 )
+            break;
+        GAgent_Printf( GAGENT_WARNING,"GAgent_connect fail , do it again !!!");
+        reconnectTime++;
+        msleep(100);
+    }
     if ( iSocketId <0 )
     {
         close( tempSocketId );

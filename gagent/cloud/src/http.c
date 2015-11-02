@@ -1,6 +1,7 @@
 #include "gagent.h"
 #include "http.h"
 #include "string.h"
+#include "local.h"
 
 extern int32 g_MQTTStatus;
 
@@ -88,7 +89,7 @@ int32 Http_Delete( int32 socketid, const int8 *host,const int8 *did,const int8 *
     int32 totalLen=0;
     int8 *DELETE=NULL;
     int8 *HOST=NULL;
-    int8 Content_Length[20]={0};
+    int8 Content_Length[20+1]={0};
     int8 *contentType="Content-Type: application/x-www-form-urlencoded\r\n\r\n";
 
     DELETE = (int8*)malloc(strlen("DELETE  HTTP/1.1\r\n")+strlen(url)+1);//+1 for sprintf
@@ -109,7 +110,7 @@ int32 Http_Delete( int32 socketid, const int8 *host,const int8 *did,const int8 *
       free(HOST);
       return 1;      
     }
-
+    memset( Content,0,strlen("did=&passcode=")+strlen(did)+strlen(passcode)+1 );
     sprintf(Content,"did=%s&passcode=%s",did,passcode);
     ContentLen=strlen(Content); 
     sprintf(DELETE,"DELETE %s HTTP/1.1\r\n",url);
@@ -620,9 +621,6 @@ int32 Http_GetMD5( uint8 *httpbuf,uint8 *MD5,int8 *strMD5)
    if((p_end-p_start)!=32) return 1;
    memcpy( strMD5,p_start,32 );
    strMD5[32] = '\0';
-   memcpy( MD5,p_start,16);
-   MD5[16]= '\0';
-
    for(i=0;i<32;i=i+2)
    {
        Temp[0] = strMD5[i];
@@ -639,6 +637,48 @@ int32 Http_GetMD5( uint8 *httpbuf,uint8 *MD5,int8 *strMD5)
    
    return 16;
 }
+int32 Http_GetFileType(uint8 *httpbuf)
+{
+    int8 *p_start = NULL;
+    int8 *p_end =NULL;
+    int8 fileExt_Len=0;
+    int8 filename_Len = 0;
+    int8 fileExt[4];
+    int8 filename[100] = {0};
+    p_start = strstr( (char *)httpbuf,"filename=" );
+    if(p_start==NULL) 
+        return 0;
+    p_start = p_start+strlen("filename=" );
+    p_end = strstr( p_start,kCRLFNewLine);
+    if(p_end==NULL)
+        return 0;
+    filename_Len = (p_end-p_start);
+    memcpy(filename,p_start,filename_Len);
+    filename[filename_Len]='\0';
+    
+    p_start = strstr( (char *)filename,"." );
+    if(p_start==NULL) 
+        return 0;
+    p_start = p_start+strlen(".");
+    p_end = strstr( p_start,"\"");
+    if(p_end==NULL)
+        return 0;
+  
+    fileExt_Len = (p_end-p_start);
+    memcpy(fileExt,p_start,fileExt_Len);
+    fileExt[fileExt_Len]='\0';
+    if( 0 == strcmp(fileExt,"hex") )
+    {
+        GAgent_Printf(GAGENT_INFO,"download firmware type is hex.");
+        return MCU_FIRMWARE_TYPE_HEX;
+    }
+    else
+    {
+        GAgent_Printf(GAGENT_INFO,"download firmware type is bin.");
+        return MCU_FIRMWARE_TYPE_BIN;
+    }
+}
+
 int32 Http_ReqGetFirmware( int8 *url,int8 *host,int32 socketid )
 {
     static int8 *getBuf = NULL;

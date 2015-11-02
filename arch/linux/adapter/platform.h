@@ -30,7 +30,7 @@
 #include "gagent_typedef.h"
 #include "oldconfigstruct.h"
 
-#define WIFI_SOFTVAR    "04020004"
+#define WIFI_SOFTVAR    "04020006"
 #define WIFI_HARDVER    "000LINUX"
 
 #define UART_NAME       "/dev/ttyUSB0"
